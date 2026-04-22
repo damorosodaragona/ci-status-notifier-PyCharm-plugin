@@ -50,15 +50,27 @@ data class JenkinsArtifact(
         get() = name.endsWith(".html", ignoreCase = true) || path.endsWith(".html", ignoreCase = true)
 }
 
+data class JenkinsJobCandidate(
+    val name: String,
+    val url: String,
+)
+
 class JenkinsStatusClient {
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .build()
 
-    fun fetchLatestBuild(baseUrl: String, jobPath: String, username: String, token: String): JenkinsBuildSummary {
+    fun fetchLatestBuild(
+        baseUrl: String,
+        jobPath: String,
+        username: String,
+        token: String,
+        preferredBranch: String? = null,
+    ): JenkinsBuildSummary {
         val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
-        val jobUrl = "$normalizedBaseUrl/${normalizeJobPath(jobPath)}"
+        val configuredJobUrl = "$normalizedBaseUrl/${normalizeJobPath(jobPath)}"
+        val jobUrl = resolveBuildableJobUrl(configuredJobUrl, username, token, preferredBranch)
         val buildJson = getJson(
             "$jobUrl/lastBuild/api/json?tree=number,displayName,fullDisplayName,result,building,url,timestamp,duration,artifacts[fileName,relativePath]",
             username,
@@ -83,6 +95,38 @@ class JenkinsStatusClient {
             stages = stages,
             artifacts = artifacts,
         )
+    }
+
+    private fun resolveBuildableJobUrl(
+        configuredJobUrl: String,
+        username: String,
+        token: String,
+        preferredBranch: String?,
+    ): String {
+        val jobJson = getJson(
+            "$configuredJobUrl/api/json?tree=buildable,lastBuild[number],jobs[name,url,color]",
+            username,
+            token,
+        )
+        if (jobJson.obj("lastBuild") != null || jobJson.boolean("buildable")) {
+            return configuredJobUrl
+        }
+
+        val jobs = jobJson.array("jobs").mapNotNull { item ->
+            val job = item.asJsonObjectOrNull() ?: return@mapNotNull null
+            JenkinsJobCandidate(job.string("name"), job.string("url").trimEnd('/'))
+        }
+        if (jobs.isEmpty()) {
+            return configuredJobUrl
+        }
+
+        val preferred = preferredBranch?.let { branch ->
+            jobs.firstOrNull { it.name.equals(branch, ignoreCase = true) }
+                ?: jobs.firstOrNull { it.name.equals(branch.replace("/", "%2F"), ignoreCase = true) }
+                ?: jobs.firstOrNull { it.name.equals(branch.replace("/", "%252F"), ignoreCase = true) }
+        }
+
+        return (preferred ?: jobs.firstOrNull { it.name.equals("main", ignoreCase = true) } ?: jobs.first()).url
     }
 
     private fun fetchStages(buildUrl: String, username: String, token: String): List<JenkinsStage> {
@@ -174,7 +218,7 @@ class JenkinsStatusClient {
         }
         return trimmed.split('/')
             .filter { it.isNotBlank() }
-            .joinToString("/") { "job/${encodePathSegment(it)}" }
+            .joinToString("/") { "job/${encodeJobName(it)}" }
     }
 
     private fun resolveJenkinsUrl(buildUrl: String, value: String): String {
@@ -187,6 +231,9 @@ class JenkinsStatusClient {
 
     private fun encodePathSegment(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
+
+    private fun encodeJobName(value: String): String =
+        encodePathSegment(value).replace("%2F", "%252F")
 }
 
 private fun JsonElement.asJsonObjectOrNull(): JsonObject? =

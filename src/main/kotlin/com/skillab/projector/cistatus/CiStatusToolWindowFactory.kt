@@ -38,6 +38,7 @@ class CiStatusToolWindowFactory : ToolWindowFactory {
 private class JenkinsDashboardPanel(private val project: Project) {
     private val settings = CiStatusSettings.getInstance(project)
     private val jenkins = JenkinsStatusClient()
+    private val shaReader = GitShaReader(project)
 
     private val summary = JBLabel("Configure Jenkins in Settings | Tools | CI Status Notifier.")
     private val stagesModel = DefaultListModel<JenkinsStage>()
@@ -154,6 +155,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
                     settings.jenkinsJobPath,
                     settings.jenkinsUsername,
                     settings.getJenkinsToken(),
+                    shaReader.currentBranch(),
                 )
             }
 

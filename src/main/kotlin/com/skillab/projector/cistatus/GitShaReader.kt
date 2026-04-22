@@ -9,6 +9,11 @@ class GitShaReader(private val project: Project) {
         return runGit("rev-parse", "HEAD")?.takeIf { it.matches(Regex("[0-9a-fA-F]{40}")) }
     }
 
+    fun currentBranch(): String? {
+        return runGit("branch", "--show-current")
+            ?: runGit("rev-parse", "--abbrev-ref", "HEAD")?.takeUnless { it == "HEAD" }
+    }
+
     fun originRepository(): String? {
         val remote = runGit("config", "--get", "remote.origin.url") ?: return null
         val match = Regex("github\\.com[:/]([^/]+/[^/.]+)(?:\\.git)?$").find(remote)

@@ -104,6 +104,7 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             settings.jenkinsJobPath,
             settings.jenkinsUsername,
             settings.getJenkinsToken(),
+            shaReader.currentBranch(),
         )
         if (!shouldNotifyJenkins(summary.state)) {
             lastFingerprint = fingerprint(summary)
