@@ -57,10 +57,19 @@ After installing/running the plugin:
 Settings | Tools | CI Status Notifier
 ```
 
-Configure:
+Configure GitHub status mode:
 
 - GitHub repository in `owner/name` format.
 - Optional GitHub token. Required for private repositories or high polling frequency.
 - Poll interval in seconds.
 
-The token is stored in the JetBrains Password Safe.
+Configure Jenkins mode:
+
+- Jenkins base URL.
+- Jenkins job path, either raw (`job/Folder/job/project/job/main`) or slash-separated (`Folder/project/main`).
+- Optional Jenkins username and API token.
+- Poll interval in seconds.
+
+Jenkins mode adds a `CI Status` tool window that shows the latest build, Pipeline stages, artifacts, and an in-IDE preview for HTML report artifacts when the IDE supports embedded browser rendering.
+
+Tokens are stored in the JetBrains Password Safe.

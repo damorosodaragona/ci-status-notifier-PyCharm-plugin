@@ -36,6 +36,50 @@ class CiStatusNotifier(private val project: Project) {
         notification.notify(project)
     }
 
+    fun notify(summary: JenkinsBuildSummary) {
+        val notificationType = when (summary.state) {
+            "SUCCESS" -> NotificationType.INFORMATION
+            "FAILURE", "FAILED", "ERROR", "ABORTED" -> NotificationType.ERROR
+            else -> NotificationType.WARNING
+        }
+
+        val failedStage = summary.stages.firstOrNull { it.status in setOf("FAILED", "FAILURE", "ERROR") }
+        val title = when (summary.state) {
+            "SUCCESS" -> "Jenkins build passed"
+            "FAILURE", "FAILED" -> "Jenkins build failed"
+            "ERROR" -> "Jenkins build errored"
+            "ABORTED" -> "Jenkins build aborted"
+            "RUNNING" -> "Jenkins build running"
+            else -> "Jenkins build is ${summary.state.lowercase()}"
+        }
+
+        val artifact = summary.artifacts.firstOrNull { it.isHtml } ?: summary.artifacts.firstOrNull()
+        val content = buildString {
+            append("<b>${StringUtil.escapeXmlEntities(summary.fullDisplayName.ifBlank { summary.displayName })}</b>")
+            if (failedStage != null) {
+                append("<br/>Failed stage: ${StringUtil.escapeXmlEntities(failedStage.name)}")
+            }
+            if (summary.artifacts.isNotEmpty()) {
+                append("<br/>Artifacts: ${summary.artifacts.size}")
+            }
+        }
+
+        val notification = NotificationGroupManager.getInstance()
+            .getNotificationGroup("CI Status Notifier")
+            .createNotification(title, content, notificationType)
+
+        notification.addAction(NotificationAction.createSimple("Open Jenkins") {
+            BrowserUtil.browse(summary.url)
+        })
+        artifact?.let {
+            notification.addAction(NotificationAction.createSimple("Open report") {
+                BrowserUtil.browse(it.url)
+            })
+        }
+
+        notification.notify(project)
+    }
+
     fun notifyConfigurationProblem(message: String) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup("CI Status Notifier")

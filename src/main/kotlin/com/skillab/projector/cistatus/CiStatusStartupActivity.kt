@@ -24,6 +24,7 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     private val settings = CiStatusSettings.getInstance(project)
     private val shaReader = GitShaReader(project)
     private val github = GitHubStatusClient()
+    private val jenkins = JenkinsStatusClient()
     private val notifier = CiStatusNotifier(project)
     private val running = AtomicBoolean(false)
 
@@ -62,6 +63,14 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             return
         }
 
+        if (settings.provider == "jenkins") {
+            pollJenkins()
+        } else {
+            pollGitHub()
+        }
+    }
+
+    private fun pollGitHub() {
         val repository = settings.repository.ifBlank { shaReader.originRepository().orEmpty() }
         if (!repository.matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) {
             return
@@ -70,6 +79,33 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
         val sha = shaReader.currentSha() ?: return
         val summary = github.fetch(repository, sha, settings.getToken())
         if (!shouldNotify(summary.state)) {
+            lastFingerprint = fingerprint(summary)
+            return
+        }
+
+        val fingerprint = fingerprint(summary)
+        if (fingerprint != lastFingerprint) {
+            lastFingerprint = fingerprint
+            ApplicationManager.getApplication().invokeLater {
+                if (!project.isDisposed) {
+                    notifier.notify(summary)
+                }
+            }
+        }
+    }
+
+    private fun pollJenkins() {
+        if (settings.jenkinsBaseUrl.isBlank() || settings.jenkinsJobPath.isBlank()) {
+            return
+        }
+
+        val summary = jenkins.fetchLatestBuild(
+            settings.jenkinsBaseUrl,
+            settings.jenkinsJobPath,
+            settings.jenkinsUsername,
+            settings.getJenkinsToken(),
+        )
+        if (!shouldNotifyJenkins(summary.state)) {
             lastFingerprint = fingerprint(summary)
             return
         }
@@ -94,11 +130,28 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
         }
     }
 
+    private fun shouldNotifyJenkins(state: String): Boolean {
+        return when (state) {
+            "RUNNING" -> settings.notifyPending
+            "SUCCESS" -> settings.notifySuccess
+            "FAILURE", "FAILED", "ERROR", "ABORTED" -> settings.notifyFailure
+            else -> true
+        }
+    }
+
     private fun fingerprint(summary: CommitStatusSummary): String {
         val statusFingerprint = summary.statuses
             .sortedBy { it.context }
             .joinToString("|") { "${it.context}:${it.state}:${it.description}:${it.targetUrl}" }
         return "${summary.sha}:${summary.state}:$statusFingerprint"
+    }
+
+    private fun fingerprint(summary: JenkinsBuildSummary): String {
+        val stageFingerprint = summary.stages
+            .joinToString("|") { "${it.id}:${it.name}:${it.status}:${it.durationMillis}" }
+        val artifactFingerprint = summary.artifacts
+            .joinToString("|") { "${it.path}:${it.url}:${it.size}" }
+        return "${summary.number}:${summary.state}:$stageFingerprint:$artifactFingerprint"
     }
 
     override fun dispose() {

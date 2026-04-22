@@ -17,7 +17,11 @@ import com.intellij.openapi.project.Project
 class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
     data class State(
         var enabled: Boolean = true,
+        var provider: String = "github",
         var repository: String = "",
+        var jenkinsBaseUrl: String = "",
+        var jenkinsJobPath: String = "",
+        var jenkinsUsername: String = "",
         var pollIntervalSeconds: Int = 60,
         var notifyPending: Boolean = false,
         var notifySuccess: Boolean = true,
@@ -42,6 +46,30 @@ class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
         get() = state.repository
         set(value) {
             state.repository = value.trim()
+        }
+
+    var provider: String
+        get() = state.provider
+        set(value) {
+            state.provider = value.lowercase().takeIf { it in setOf("github", "jenkins") } ?: "github"
+        }
+
+    var jenkinsBaseUrl: String
+        get() = state.jenkinsBaseUrl
+        set(value) {
+            state.jenkinsBaseUrl = value.trim().trimEnd('/')
+        }
+
+    var jenkinsJobPath: String
+        get() = state.jenkinsJobPath
+        set(value) {
+            state.jenkinsJobPath = value.trim().trim('/')
+        }
+
+    var jenkinsUsername: String
+        get() = state.jenkinsUsername
+        set(value) {
+            state.jenkinsUsername = value.trim()
         }
 
     var pollIntervalSeconds: Int
@@ -75,8 +103,18 @@ class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
         PasswordSafe.instance.set(credentialAttributes(), credentials)
     }
 
+    fun getJenkinsToken(): String = PasswordSafe.instance.getPassword(jenkinsCredentialAttributes()) ?: ""
+
+    fun setJenkinsToken(token: String) {
+        val credentials = if (token.isBlank()) null else Credentials(jenkinsUsername.ifBlank { "jenkins" }, token)
+        PasswordSafe.instance.set(jenkinsCredentialAttributes(), credentials)
+    }
+
     private fun credentialAttributes(): CredentialAttributes =
         CredentialAttributes("SkillabCiStatusNotifier:${repository.ifBlank { "default" }}")
+
+    private fun jenkinsCredentialAttributes(): CredentialAttributes =
+        CredentialAttributes("SkillabCiStatusNotifier:Jenkins:${jenkinsBaseUrl.ifBlank { "default" }}:${jenkinsUsername.ifBlank { "default" }}")
 
     companion object {
         fun getInstance(project: Project): CiStatusSettings = project.getService(CiStatusSettings::class.java)

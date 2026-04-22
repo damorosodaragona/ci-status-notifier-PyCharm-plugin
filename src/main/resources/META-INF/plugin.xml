@@ -17,6 +17,10 @@
             parentId="tools"
             displayName="CI Status Notifier"/>
         <postStartupActivity implementation="com.skillab.projector.cistatus.CiStatusStartupActivity"/>
+        <toolWindow
+            id="CI Status"
+            anchor="right"
+            factoryClass="com.skillab.projector.cistatus.CiStatusToolWindowFactory"/>
         <notificationGroup
             id="CI Status Notifier"
             displayType="BALLOON"
