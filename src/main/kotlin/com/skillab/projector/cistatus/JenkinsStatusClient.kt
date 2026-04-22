@@ -55,6 +55,25 @@ data class JenkinsJobCandidate(
     val url: String,
 )
 
+data class JenkinsJobNode(
+    val name: String,
+    val url: String,
+    val color: String,
+    val buildable: Boolean,
+    val lastBuildNumber: Int?,
+    val lastBuildResult: String?,
+    val lastBuildBuilding: Boolean,
+    val children: List<JenkinsJobNode>,
+) {
+    val isBuildJob: Boolean
+        get() = buildable || lastBuildNumber != null
+}
+
+data class JenkinsJobTree(
+    val root: JenkinsJobNode,
+    val autoSelected: JenkinsJobNode?,
+)
+
 class JenkinsStatusClient {
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
@@ -71,14 +90,19 @@ class JenkinsStatusClient {
         val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
         val configuredJobUrl = "$normalizedBaseUrl/${normalizeJobPath(jobPath)}"
         val jobUrl = resolveBuildableJobUrl(configuredJobUrl, username, token, preferredBranch)
+        return fetchLatestBuildForJobUrl(jobUrl, username, token)
+    }
+
+    fun fetchLatestBuildForJobUrl(jobUrl: String, username: String, token: String): JenkinsBuildSummary {
+        val normalizedJobUrl = jobUrl.trimEnd('/')
         val buildJson = getJson(
-            "$jobUrl/lastBuild/api/json?tree=number,displayName,fullDisplayName,result,building,url,timestamp,duration,artifacts[fileName,relativePath]",
+            "$normalizedJobUrl/lastBuild/api/json?tree=number,displayName,fullDisplayName,result,building,url,timestamp,duration,artifacts[fileName,relativePath]",
             username,
             token,
         )
 
         val buildUrl = buildJson.string("url").ifBlank {
-            "$jobUrl/${buildJson.int("number")}/"
+            "$normalizedJobUrl/${buildJson.int("number")}/"
         }.trimEnd('/') + "/"
         val stages = fetchStages(buildUrl, username, token)
         val artifacts = fetchArtifacts(buildUrl, buildJson, username, token)
@@ -95,6 +119,19 @@ class JenkinsStatusClient {
             stages = stages,
             artifacts = artifacts,
         )
+    }
+
+    fun fetchJobTree(
+        baseUrl: String,
+        jobPath: String,
+        username: String,
+        token: String,
+        preferredBranch: String?,
+    ): JenkinsJobTree {
+        val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
+        val rootUrl = "$normalizedBaseUrl/${normalizeJobPath(jobPath)}"
+        val root = fetchJobNode(rootUrl, username, token, 0, maxDepth = 5, visited = mutableSetOf())
+        return JenkinsJobTree(root, findAutoSelected(root, preferredBranch))
     }
 
     private fun resolveBuildableJobUrl(
@@ -128,6 +165,74 @@ class JenkinsStatusClient {
 
         return (preferred ?: jobs.firstOrNull { it.name.equals("main", ignoreCase = true) } ?: jobs.first()).url
     }
+
+    private fun fetchJobNode(
+        jobUrl: String,
+        username: String,
+        token: String,
+        depth: Int,
+        maxDepth: Int,
+        visited: MutableSet<String>,
+    ): JenkinsJobNode {
+        val normalizedJobUrl = jobUrl.trimEnd('/')
+        if (!visited.add(normalizedJobUrl)) {
+            return JenkinsJobNode(normalizedJobUrl.substringAfterLast('/'), normalizedJobUrl, "", false, null, null, false, emptyList())
+        }
+
+        val jobJson = getJson(
+            "$normalizedJobUrl/api/json?tree=name,displayName,url,color,buildable,lastBuild[number,result,building],jobs[name,displayName,url,color]",
+            username,
+            token,
+        )
+        val childSeeds = if (depth < maxDepth) {
+            jobJson.array("jobs").mapNotNull { it.asJsonObjectOrNull() }
+        } else {
+            emptyList()
+        }
+        val children = childSeeds.mapNotNull { child ->
+            val childUrl = child.string("url").ifBlank { return@mapNotNull null }
+            runCatching { fetchJobNode(childUrl, username, token, depth + 1, maxDepth, visited) }
+                .getOrNull()
+        }
+        val lastBuild = jobJson.obj("lastBuild")
+
+        return JenkinsJobNode(
+            name = jobJson.string("displayName").ifBlank { jobJson.string("name").ifBlank { normalizedJobUrl.substringAfterLast('/') } },
+            url = jobJson.string("url").ifBlank { normalizedJobUrl },
+            color = jobJson.string("color"),
+            buildable = jobJson.boolean("buildable"),
+            lastBuildNumber = lastBuild?.nullableInt("number"),
+            lastBuildResult = lastBuild?.nullableString("result"),
+            lastBuildBuilding = lastBuild?.boolean("building") ?: jobJson.string("color").endsWith("_anime"),
+            children = children,
+        )
+    }
+
+    private fun findAutoSelected(root: JenkinsJobNode, preferredBranch: String?): JenkinsJobNode? {
+        val buildJobs = flatten(root).filter { it.isBuildJob }
+        if (buildJobs.isEmpty()) {
+            return null
+        }
+
+        val branchNames = preferredBranch?.let { branch ->
+            listOf(
+                branch,
+                branch.replace("/", "%2F"),
+                branch.replace("/", "%252F"),
+                branch.substringAfterLast('/'),
+            ).distinct()
+        }.orEmpty()
+
+        return branchNames.firstNotNullOfOrNull { branch ->
+            buildJobs.firstOrNull { it.name.equals(branch, ignoreCase = true) }
+                ?: buildJobs.firstOrNull { it.url.trimEnd('/').substringAfterLast('/').equals(branch, ignoreCase = true) }
+        }
+            ?: buildJobs.firstOrNull { it.name.equals("main", ignoreCase = true) }
+            ?: buildJobs.first()
+    }
+
+    private fun flatten(node: JenkinsJobNode): List<JenkinsJobNode> =
+        listOf(node) + node.children.flatMap(::flatten)
 
     private fun fetchStages(buildUrl: String, username: String, token: String): List<JenkinsStage> {
         val workflow = runCatching { getJson("${buildUrl}wfapi/describe", username, token) }.getOrNull() ?: return emptyList()
@@ -247,6 +352,9 @@ private fun JsonObject.nullableString(name: String): String? =
 
 private fun JsonObject.int(name: String): Int =
     get(name)?.takeUnless { it.isJsonNull }?.asInt ?: 0
+
+private fun JsonObject.nullableInt(name: String): Int? =
+    get(name)?.takeUnless { it.isJsonNull }?.asInt
 
 private fun JsonObject.long(name: String): Long =
     get(name)?.takeUnless { it.isJsonNull }?.asLong ?: 0L

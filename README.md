@@ -70,6 +70,6 @@ Configure Jenkins mode:
 - Optional Jenkins username and API token.
 - Poll interval in seconds.
 
-Jenkins mode adds a `CI Status` tool window that shows the latest build, Pipeline stages, artifacts, and an in-IDE preview for HTML report artifacts when the IDE supports embedded browser rendering.
+Jenkins mode adds a `CI Status` tool window that scans the configured Jenkins root, auto-selects the build job that best matches the current Git branch, and still shows the Jenkins job tree as a manual fallback. Selecting a job shows its latest build, Pipeline stages, artifacts, and an in-IDE preview for HTML report artifacts when the IDE supports embedded browser rendering.
 
 Tokens are stored in the JetBrains Password Safe.
