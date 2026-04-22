@@ -1,0 +1,25 @@
+<idea-plugin>
+    <id>com.skillab.projector.ci-status-notifier</id>
+    <name>CI Status Notifier</name>
+    <vendor email="dev@skillab-project.eu">Skillab Projector</vendor>
+
+    <description>
+        Watches GitHub commit statuses for the current Git commit and shows IDE notifications when Jenkins-backed CI changes state.
+    </description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <projectService serviceImplementation="com.skillab.projector.cistatus.CiStatusSettings"/>
+        <projectConfigurable
+            instance="com.skillab.projector.cistatus.CiStatusConfigurable"
+            parentId="tools"
+            displayName="CI Status Notifier"/>
+        <postStartupActivity implementation="com.skillab.projector.cistatus.CiStatusStartupActivity"/>
+        <notificationGroup
+            id="CI Status Notifier"
+            displayType="BALLOON"
+            isLogByDefault="true"/>
+    </extensions>
+</idea-plugin>
