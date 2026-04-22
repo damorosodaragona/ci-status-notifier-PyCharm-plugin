@@ -66,7 +66,7 @@ data class JenkinsJobNode(
     val children: List<JenkinsJobNode>,
 ) {
     val isBuildJob: Boolean
-        get() = buildable || lastBuildNumber != null
+        get() = lastBuildNumber != null || (buildable && children.isEmpty())
 }
 
 data class JenkinsJobTree(
