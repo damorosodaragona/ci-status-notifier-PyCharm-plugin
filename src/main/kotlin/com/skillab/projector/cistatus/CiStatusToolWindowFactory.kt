@@ -1,7 +1,11 @@
 package com.skillab.projector.cistatus
 
 import com.intellij.ide.BrowserUtil
+import com.intellij.notification.NotificationAction
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
@@ -25,12 +29,14 @@ import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JSplitPane
+import javax.swing.JTextArea
 import javax.swing.JTree
 import javax.swing.SwingUtilities
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeCellRenderer
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
+import java.awt.datatransfer.StringSelection
 
 class CiStatusToolWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -58,6 +64,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
 
     private var latestBuild: JenkinsBuildSummary? = null
     private var browser: JBCefBrowser? = null
+    private var lastError: String? = null
 
     val component: JComponent = buildComponent()
 
@@ -72,17 +79,20 @@ private class JenkinsDashboardPanel(private val project: Project) {
         val openJenkins = JButton("Open Jenkins")
         val openArtifact = JButton("Open Artifact")
         val previewArtifact = JButton("Preview HTML")
+        val copyError = JButton("Copy Error")
 
         refresh.addActionListener { refresh() }
         openJenkins.addActionListener { latestBuild?.url?.let(BrowserUtil::browse) }
         openArtifact.addActionListener { selectedArtifact()?.url?.let(BrowserUtil::browse) }
         previewArtifact.addActionListener { selectedArtifact()?.let { previewArtifact(it) } }
+        copyError.addActionListener { copyLastError() }
 
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)).apply {
             add(refresh)
             add(openJenkins)
             add(openArtifact)
             add(previewArtifact)
+            add(copyError)
         }
 
         val buildDetails = JPanel(GridLayout(1, 2, 8, 0)).apply {
@@ -202,7 +212,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
 
             SwingUtilities.invokeLater {
                 result.onSuccess { showJobTree(it, branch) }
-                    .onFailure { showMessage("Could not scan Jenkins jobs: ${it.message}", updateSummary = true) }
+                    .onFailure { showError("Could not scan Jenkins jobs", it) }
             }
         }
     }
@@ -243,7 +253,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
 
             SwingUtilities.invokeLater {
                 result.onSuccess(::showBuild)
-                    .onFailure { showMessage("Could not load ${job.name}: ${it.message}", updateSummary = true) }
+                    .onFailure { showError("Could not load ${job.name}", it) }
             }
         }
     }
@@ -316,6 +326,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
     }
 
     private fun showMessage(message: String, updateSummary: Boolean = false) {
+        lastError = null
         browser?.let(Disposer::dispose)
         browser = null
         preview.removeAll()
@@ -324,6 +335,46 @@ private class JenkinsDashboardPanel(private val project: Project) {
         preview.repaint()
         if (updateSummary) {
             summary.text = message
+        }
+    }
+
+    private fun showError(title: String, error: Throwable) {
+        val message = buildString {
+            append(title)
+            append(": ")
+            append(error.message ?: error::class.java.simpleName)
+        }
+        lastError = message
+        browser?.let(Disposer::dispose)
+        browser = null
+        preview.removeAll()
+        preview.add(JBScrollPane(JTextArea(message).apply {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+            rows = 8
+            background = preview.background
+            foreground = JBColor.RED
+        }), BorderLayout.CENTER)
+        preview.revalidate()
+        preview.repaint()
+        summary.text = title
+        notifyError(title, message)
+    }
+
+    private fun notifyError(title: String, message: String) {
+        val notification = NotificationGroupManager.getInstance()
+            .getNotificationGroup("CI Status Notifier")
+            .createNotification(title, message.take(240), NotificationType.ERROR)
+        notification.addAction(NotificationAction.createSimple("Copy details") {
+            CopyPasteManager.getInstance().setContents(StringSelection(message))
+        })
+        notification.notify(project)
+    }
+
+    private fun copyLastError() {
+        lastError?.let {
+            CopyPasteManager.getInstance().setContents(StringSelection(it))
         }
     }
 

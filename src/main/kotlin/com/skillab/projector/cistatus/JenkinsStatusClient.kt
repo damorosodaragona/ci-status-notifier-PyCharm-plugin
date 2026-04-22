@@ -373,9 +373,17 @@ private fun JsonObject.obj(name: String): JsonObject? =
 
 class JenkinsHttpException(statusCode: Int, url: String, location: String?) : IllegalStateException(
     buildString {
-        append("Jenkins returned HTTP ")
-        append(statusCode)
-        append(" for ")
+        when (statusCode) {
+            401 -> append("Jenkins authentication failed. Check the Jenkins username and API token. ")
+            403 -> append("Jenkins denied access. The user may not have permission for this job, or Jenkins may require authentication. ")
+            404 -> append("Jenkins job was not found. Check the Jenkins job path. ")
+            else -> {
+                append("Jenkins returned HTTP ")
+                append(statusCode)
+                append(". ")
+            }
+        }
+        append("URL: ")
         append(url)
         if (statusCode in 300..399 && !location.isNullOrBlank()) {
             append(" and redirected to ")
