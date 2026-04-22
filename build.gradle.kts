@@ -20,7 +20,12 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        local("/Applications/PyCharm.app")
+        val localPyCharm = file("/Applications/PyCharm.app")
+        if (localPyCharm.exists() && !providers.environmentVariable("CI").isPresent) {
+            local(localPyCharm.absolutePath)
+        } else {
+            pycharmCommunity(providers.gradleProperty("platformVersion"))
+        }
         bundledPlugin("Git4Idea")
     }
 }
