@@ -88,7 +88,7 @@ class JenkinsStatusClient {
         preferredBranch: String? = null,
     ): JenkinsBuildSummary {
         val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
-        val configuredJobUrl = "$normalizedBaseUrl/${normalizeJobPath(jobPath)}"
+        val configuredJobUrl = buildJenkinsUrl(normalizedBaseUrl, jobPath)
         val jobUrl = resolveBuildableJobUrl(configuredJobUrl, username, token, preferredBranch)
         return fetchLatestBuildForJobUrl(jobUrl, username, token)
     }
@@ -129,7 +129,7 @@ class JenkinsStatusClient {
         preferredBranch: String?,
     ): JenkinsJobTree {
         val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
-        val rootUrl = "$normalizedBaseUrl/${normalizeJobPath(jobPath)}"
+        val rootUrl = buildJenkinsUrl(normalizedBaseUrl, jobPath)
         val root = fetchJobNode(rootUrl, username, token, 0, maxDepth = 5, visited = mutableSetOf())
         return JenkinsJobTree(root, findAutoSelected(root, preferredBranch))
     }
@@ -318,12 +318,20 @@ class JenkinsStatusClient {
 
     private fun normalizeJobPath(jobPath: String): String {
         val trimmed = jobPath.trim().trim('/')
+        if (trimmed.isBlank()) {
+            return ""
+        }
         if (trimmed.contains("/job/") || trimmed.startsWith("job/")) {
             return trimmed
         }
         return trimmed.split('/')
             .filter { it.isNotBlank() }
             .joinToString("/") { "job/${encodeJobName(it)}" }
+    }
+
+    private fun buildJenkinsUrl(normalizedBaseUrl: String, jobPath: String): String {
+        val normalizedPath = normalizeJobPath(jobPath)
+        return if (normalizedPath.isBlank()) normalizedBaseUrl else "$normalizedBaseUrl/$normalizedPath"
     }
 
     private fun resolveJenkinsUrl(buildUrl: String, value: String): String {
@@ -374,9 +382,9 @@ private fun JsonObject.obj(name: String): JsonObject? =
 class JenkinsHttpException(statusCode: Int, url: String, location: String?) : IllegalStateException(
     buildString {
         when (statusCode) {
-            401 -> append("Jenkins authentication failed. Check the Jenkins username and API token. ")
+            401 -> append("Jenkins authentication failed or this token cannot read the requested Jenkins root. Check the Jenkins username/API token, grant Overall/Read for root scans, or set a narrower Jenkins scan root. ")
             403 -> append("Jenkins denied access. The user may not have permission for this job, or Jenkins may require authentication. ")
-            404 -> append("Jenkins job was not found. Check the Jenkins job path. ")
+            404 -> append("Jenkins job was not found. Check the Jenkins scan root. ")
             else -> {
                 append("Jenkins returned HTTP ")
                 append(statusCode)
@@ -388,7 +396,7 @@ class JenkinsHttpException(statusCode: Int, url: String, location: String?) : Il
         if (statusCode in 300..399 && !location.isNullOrBlank()) {
             append(" and redirected to ")
             append(location)
-            append(". Check the Jenkins job path and credentials.")
+            append(". Check the Jenkins scan root and credentials.")
         }
     }
 )

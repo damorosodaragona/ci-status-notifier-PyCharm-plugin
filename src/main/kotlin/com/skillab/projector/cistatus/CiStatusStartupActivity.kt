@@ -95,7 +95,7 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     }
 
     private fun pollJenkins() {
-        if (settings.jenkinsBaseUrl.isBlank() || settings.jenkinsJobPath.isBlank()) {
+        if (settings.jenkinsBaseUrl.isBlank()) {
             return
         }
 

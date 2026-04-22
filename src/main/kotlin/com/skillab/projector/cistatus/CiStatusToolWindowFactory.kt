@@ -192,8 +192,8 @@ private class JenkinsDashboardPanel(private val project: Project) {
             return
         }
 
-        if (settings.jenkinsBaseUrl.isBlank() || settings.jenkinsJobPath.isBlank()) {
-            showMessage("Configure Jenkins URL and job path in Settings | Tools | CI Status Notifier.", updateSummary = true)
+        if (settings.jenkinsBaseUrl.isBlank()) {
+            showMessage("Configure Jenkins URL in Settings | Tools | CI Status Notifier.", updateSummary = true)
             return
         }
 

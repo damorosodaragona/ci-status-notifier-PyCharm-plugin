@@ -66,7 +66,7 @@ Configure GitHub status mode:
 Configure Jenkins mode:
 
 - Jenkins base URL.
-- Jenkins job path, either raw (`job/Folder/job/project/job/main`) or slash-separated (`Folder/project/main`).
+- Optional Jenkins scan root. Leave blank to scan from the Jenkins root, or set a raw (`job/Folder/job/project`) or slash-separated (`Folder/project`) path to narrow the scan. Root scans require Jenkins permissions that allow reading the global Jenkins root.
 - Optional Jenkins username and API token.
 - Poll interval in seconds.
 
