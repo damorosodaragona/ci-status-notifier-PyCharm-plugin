@@ -25,7 +25,6 @@ import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.GridLayout
 import java.awt.Insets
-import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
 import javax.swing.BoxLayout
 import javax.swing.JButton
@@ -36,7 +35,9 @@ import javax.swing.JPanel
 import javax.swing.JSplitPane
 import javax.swing.JTextArea
 import javax.swing.JTree
+import javax.swing.ListCellRenderer
 import javax.swing.SwingUtilities
+import javax.swing.UIManager
 import javax.swing.border.EmptyBorder
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeCellRenderer
@@ -109,7 +110,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
             border = EmptyBorder(4, 8, 4, 8)
             add(statusBadge.apply {
                 isOpaque = true
-                border = EmptyBorder(3, 8, 3, 8)
+                border = EmptyBorder(2, 8, 2, 8)
                 font = font.deriveFont(Font.BOLD)
             }, BorderLayout.WEST)
             add(JPanel().apply {
@@ -120,16 +121,20 @@ private class JenkinsDashboardPanel(private val project: Project) {
             add(toolbar, BorderLayout.EAST)
         }
 
-        val buildDetails = JPanel(GridLayout(1, 2, 8, 0)).apply {
+        val buildDetails = JPanel(GridLayout(1, 2, 4, 0)).apply {
             add(titledPanel("Stages", JBScrollPane(stages)))
             add(titledPanel("Artifacts", JBScrollPane(artifactsTree)))
         }
         val right = JSplitPane(JSplitPane.VERTICAL_SPLIT, buildDetails, titledPanel("Preview", preview)).apply {
             resizeWeight = 0.45
+            dividerSize = 1
+            isContinuousLayout = true
             border = null
         }
         val main = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, titledPanel("Jenkins", JBScrollPane(jobsTree)), right).apply {
             resizeWeight = 0.28
+            dividerSize = 1
+            isContinuousLayout = true
             border = null
         }
 
@@ -142,6 +147,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
 
     private fun configureTrees() {
         jobsTree.isRootVisible = true
+        jobsTree.rowHeight = 26
         jobsTree.cellRenderer = object : DefaultTreeCellRenderer() {
             override fun getTreeCellRendererComponent(
                 tree: JTree?,
@@ -155,8 +161,8 @@ private class JenkinsDashboardPanel(private val project: Project) {
                 val component = super.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus)
                 val node = (value as? DefaultMutableTreeNode)?.userObject as? JenkinsJobNode
                 if (node != null) {
-                    text = "${node.name}${node.lastBuildNumber?.let { "  #$it" }.orEmpty()}"
-                    foreground = jobColor(node, foreground)
+                    text = "${statusDot(node)} ${node.name}${node.lastBuildNumber?.let { "  #$it" }.orEmpty()}"
+                    foreground = if (selected) foreground else jobColor(node, foreground)
                 }
                 return component
             }
@@ -166,6 +172,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
         }
 
         artifactsTree.isRootVisible = false
+        artifactsTree.rowHeight = 26
         artifactsTree.cellRenderer = object : DefaultTreeCellRenderer() {
             override fun getTreeCellRendererComponent(
                 tree: JTree?,
@@ -181,12 +188,14 @@ private class JenkinsDashboardPanel(private val project: Project) {
                 val artifact = userObject as? JenkinsArtifact
                 if (artifact != null) {
                     text = buildString {
-                        append(artifact.name)
-                        if (artifact.isHtml) append("  HTML")
+                        append(if (artifact.isHtml) "○ " else "  ")
+                        append(artifact.path.substringAfterLast('/').ifBlank { artifact.name })
+                        if (artifact.isHtml) append("  html")
                         artifact.size?.let { append("  ${formatBytes(it)}") }
                     }
+                    foreground = if (selected) foreground else if (artifact.isHtml) JBColor(0x2F6FBD, 0x8AB4F8) else foreground
                 } else if (userObject is String) {
-                    text = userObject
+                    text = "▾ $userObject"
                 }
                 return component
             }
@@ -197,22 +206,8 @@ private class JenkinsDashboardPanel(private val project: Project) {
     }
 
     private fun configureStages() {
-        stages.cellRenderer = object : DefaultListCellRenderer() {
-            override fun getListCellRendererComponent(
-                list: JList<*>?,
-                value: Any?,
-                index: Int,
-                isSelected: Boolean,
-                cellHasFocus: Boolean,
-            ): java.awt.Component {
-                val component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
-                val stage = value as? JenkinsStage ?: return component
-                text = "${stage.status.padEnd(11)}  ${stage.name}  ${formatDuration(stage.durationMillis)}"
-                foreground = stageColor(stage.status, foreground)
-                border = EmptyBorder(4, 6, 4, 6)
-                return component
-            }
-        }
+        stages.fixedCellHeight = 28
+        stages.cellRenderer = StageRenderer()
     }
 
     private fun refresh() {
@@ -434,6 +429,49 @@ private class JenkinsDashboardPanel(private val project: Project) {
         }
     }
 
+    private inner class StageRenderer : JPanel(BorderLayout(8, 0)), ListCellRenderer<JenkinsStage> {
+        private val marker = JLabel("●")
+        private val name = JLabel()
+        private val duration = JLabel()
+
+        init {
+            border = EmptyBorder(3, 8, 3, 8)
+            add(marker, BorderLayout.WEST)
+            add(name, BorderLayout.CENTER)
+            add(duration, BorderLayout.EAST)
+            isOpaque = true
+        }
+
+        override fun getListCellRendererComponent(
+            list: JList<out JenkinsStage>,
+            value: JenkinsStage?,
+            index: Int,
+            isSelected: Boolean,
+            cellHasFocus: Boolean,
+        ): java.awt.Component {
+            val stage = value ?: return this
+            val selectedBackground = UIManager.getColor("List.selectionBackground")
+            val selectedForeground = UIManager.getColor("List.selectionForeground")
+            background = if (isSelected) selectedBackground else list.background
+            foreground = if (isSelected) selectedForeground else list.foreground
+
+            val color = stageColor(stage.status, foreground)
+            marker.foreground = if (isSelected) selectedForeground else color
+            marker.text = when (stage.status.uppercase()) {
+                "SUCCESS" -> "●"
+                "FAILED", "FAILURE", "ERROR" -> "●"
+                "IN_PROGRESS", "PAUSED_PENDING_INPUT" -> "●"
+                else -> "○"
+            }
+            name.text = stage.name
+            name.foreground = foreground
+            duration.text = formatDuration(stage.durationMillis)
+            duration.foreground = JBColor.GRAY
+            toolTipText = "${stage.status}: ${stage.name}"
+            return this
+        }
+    }
+
     private fun selectedJob(): JenkinsJobNode? =
         (jobsTree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject as? JenkinsJobNode
 
@@ -478,6 +516,15 @@ private class JenkinsDashboardPanel(private val project: Project) {
             else -> "UNKNOWN"
         }
 
+    private fun statusDot(job: JenkinsJobNode): String =
+        when (statusText(job)) {
+            "SUCCESS" -> "●"
+            "FAILED" -> "●"
+            "RUNNING" -> "●"
+            "GROUP" -> "▾"
+            else -> "○"
+        }
+
     private fun toolbarButton(text: String): JButton =
         JButton(text).apply {
             margin = Insets(2, 8, 2, 8)
@@ -493,7 +540,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
             buildMeta.text = "Select a Jenkins job to inspect stages and artifacts."
             return
         }
-        statusBadge.text = build.state
+        statusBadge.text = "● ${build.state}"
         statusBadge.background = statusBackground(build.state)
         statusBadge.foreground = Color.WHITE
         buildTitle.text = build.fullDisplayName.ifBlank { build.displayName }
