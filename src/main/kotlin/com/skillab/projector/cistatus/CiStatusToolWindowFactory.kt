@@ -6,6 +6,7 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
@@ -19,10 +20,14 @@ import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import java.awt.BorderLayout
+import java.awt.Color
 import java.awt.FlowLayout
+import java.awt.Font
 import java.awt.GridLayout
+import java.awt.Insets
 import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
+import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JLabel
@@ -32,11 +37,13 @@ import javax.swing.JSplitPane
 import javax.swing.JTextArea
 import javax.swing.JTree
 import javax.swing.SwingUtilities
+import javax.swing.border.EmptyBorder
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeCellRenderer
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
 import java.awt.datatransfer.StringSelection
+import java.nio.file.Path
 
 class CiStatusToolWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -61,6 +68,10 @@ private class JenkinsDashboardPanel(private val project: Project) {
     private val artifactsModel = DefaultTreeModel(artifactsRoot)
     private val artifactsTree = JTree(artifactsModel)
     private val preview = JPanel(BorderLayout())
+    private val statusBadge = JLabel("NOT LOADED")
+    private val buildTitle = JLabel("No build selected")
+    private val buildMeta = JLabel("Select a Jenkins job to inspect stages and artifacts.")
+    private val artifactCacheRoot: Path = Path.of(PathManager.getSystemPath(), "ci-status-notifier", "jenkins-artifacts")
 
     private var latestBuild: JenkinsBuildSummary? = null
     private var browser: JBCefBrowser? = null
@@ -75,11 +86,11 @@ private class JenkinsDashboardPanel(private val project: Project) {
     }
 
     private fun buildComponent(): JComponent {
-        val refresh = JButton("Refresh")
-        val openJenkins = JButton("Open Jenkins")
-        val openArtifact = JButton("Open Artifact")
-        val previewArtifact = JButton("Preview HTML")
-        val copyError = JButton("Copy Error")
+        val refresh = toolbarButton("Refresh")
+        val openJenkins = toolbarButton("Jenkins")
+        val openArtifact = toolbarButton("Artifact")
+        val previewArtifact = toolbarButton("Preview")
+        val copyError = toolbarButton("Copy Error")
 
         refresh.addActionListener { refresh() }
         openJenkins.addActionListener { latestBuild?.url?.let(BrowserUtil::browse) }
@@ -93,6 +104,20 @@ private class JenkinsDashboardPanel(private val project: Project) {
             add(openArtifact)
             add(previewArtifact)
             add(copyError)
+        }
+        val header = JPanel(BorderLayout(10, 0)).apply {
+            border = EmptyBorder(4, 8, 4, 8)
+            add(statusBadge.apply {
+                isOpaque = true
+                border = EmptyBorder(3, 8, 3, 8)
+                font = font.deriveFont(Font.BOLD)
+            }, BorderLayout.WEST)
+            add(JPanel().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                add(buildTitle.apply { font = font.deriveFont(Font.BOLD) })
+                add(buildMeta)
+            }, BorderLayout.CENTER)
+            add(toolbar, BorderLayout.EAST)
         }
 
         val buildDetails = JPanel(GridLayout(1, 2, 8, 0)).apply {
@@ -109,7 +134,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
         }
 
         return JBPanel<JBPanel<*>>(BorderLayout(0, 6)).apply {
-            add(toolbar, BorderLayout.NORTH)
+            add(header, BorderLayout.NORTH)
             add(main, BorderLayout.CENTER)
             add(summary, BorderLayout.SOUTH)
         }
@@ -130,7 +155,8 @@ private class JenkinsDashboardPanel(private val project: Project) {
                 val component = super.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus)
                 val node = (value as? DefaultMutableTreeNode)?.userObject as? JenkinsJobNode
                 if (node != null) {
-                    text = "${statusIcon(node)} ${node.name}${node.lastBuildNumber?.let { " #$it" }.orEmpty()}"
+                    text = "${node.name}${node.lastBuildNumber?.let { "  #$it" }.orEmpty()}"
+                    foreground = jobColor(node, foreground)
                 }
                 return component
             }
@@ -151,9 +177,16 @@ private class JenkinsDashboardPanel(private val project: Project) {
                 hasFocus: Boolean,
             ): java.awt.Component {
                 val component = super.getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus)
-                val artifact = (value as? DefaultMutableTreeNode)?.userObject as? JenkinsArtifact
+                val userObject = (value as? DefaultMutableTreeNode)?.userObject
+                val artifact = userObject as? JenkinsArtifact
                 if (artifact != null) {
-                    text = "${artifact.name} ${artifact.size?.let(::formatBytes).orEmpty()}"
+                    text = buildString {
+                        append(artifact.name)
+                        if (artifact.isHtml) append("  HTML")
+                        artifact.size?.let { append("  ${formatBytes(it)}") }
+                    }
+                } else if (userObject is String) {
+                    text = userObject
                 }
                 return component
             }
@@ -174,13 +207,9 @@ private class JenkinsDashboardPanel(private val project: Project) {
             ): java.awt.Component {
                 val component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
                 val stage = value as? JenkinsStage ?: return component
-                text = "${statusIcon(stage.status)} ${stage.name}  ${stage.status}  ${formatDuration(stage.durationMillis)}"
-                foreground = when (stage.status.uppercase()) {
-                    "FAILED", "FAILURE", "ERROR" -> JBColor.RED
-                    "SUCCESS" -> JBColor(0x2E7D32, 0x7BC47F)
-                    "IN_PROGRESS", "PAUSED_PENDING_INPUT" -> JBColor(0xB26A00, 0xF0B35A)
-                    else -> foreground
-                }
+                text = "${stage.status.padEnd(11)}  ${stage.name}  ${formatDuration(stage.durationMillis)}"
+                foreground = stageColor(stage.status, foreground)
+                border = EmptyBorder(4, 6, 4, 6)
                 return component
             }
         }
@@ -261,12 +290,13 @@ private class JenkinsDashboardPanel(private val project: Project) {
     private fun showBuild(build: JenkinsBuildSummary) {
         latestBuild = build
         summary.text = "${build.fullDisplayName.ifBlank { build.displayName }} - ${build.state} - ${formatDuration(build.durationMillis)}"
+        updateHeader(build)
         stagesModel.clear()
         build.stages.forEach(stagesModel::addElement)
         rebuildArtifactTree(build.artifacts)
 
         val failedStage = build.stages.firstOrNull { it.status.uppercase() in setOf("FAILED", "FAILURE", "ERROR") }
-        val htmlArtifact = build.artifacts.firstOrNull { it.isHtml }
+        val htmlArtifact = preferredHtmlArtifact(build.artifacts)
         when {
             htmlArtifact != null -> previewArtifact(htmlArtifact)
             failedStage != null -> showMessage("Failed stage: ${failedStage.name}")
@@ -290,6 +320,7 @@ private class JenkinsDashboardPanel(private val project: Project) {
 
     private fun clearBuild() {
         latestBuild = null
+        updateHeader(null)
         stagesModel.clear()
         artifactsRoot.removeAllChildren()
         artifactsModel.reload()
@@ -307,22 +338,47 @@ private class JenkinsDashboardPanel(private val project: Project) {
     }
 
     private fun previewArtifact(artifact: JenkinsArtifact) {
-        browser?.let(Disposer::dispose)
-        browser = null
-        preview.removeAll()
-        if (artifact.isHtml && JBCefApp.isSupported()) {
-            browser = JBCefBrowser().also {
-                it.loadURL(artifact.url)
-                preview.add(it.component, BorderLayout.CENTER)
-            }
-        } else if (artifact.isHtml) {
-            preview.add(JLabel("Embedded browser is not available. Use Open Artifact."), BorderLayout.NORTH)
-        } else {
+        if (!artifact.isHtml) {
             showMessage("Selected artifact is not an HTML report. Use Open Artifact.")
             return
         }
-        preview.revalidate()
-        preview.repaint()
+        val build = latestBuild ?: run {
+            showMessage("No build selected.")
+            return
+        }
+        if (!JBCefApp.isSupported()) {
+            showMessage("Embedded browser is not available. Use Open Artifact.")
+            return
+        }
+
+        showMessage("Preparing local artifact preview...")
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = runCatching {
+                val cacheDir = jenkins.downloadArtifacts(
+                    build,
+                    settings.jenkinsUsername,
+                    settings.getJenkinsToken(),
+                    artifactCacheRoot,
+                )
+                cacheDir.resolve(artifact.path).normalize()
+            }
+
+            SwingUtilities.invokeLater {
+                result.onSuccess { localFile ->
+                    browser?.let(Disposer::dispose)
+                    browser = null
+                    preview.removeAll()
+                    browser = JBCefBrowser().also {
+                        it.loadURL(localFile.toUri().toString())
+                        preview.add(it.component, BorderLayout.CENTER)
+                    }
+                    preview.revalidate()
+                    preview.repaint()
+                }.onFailure {
+                    showError("Could not prepare artifact preview", it)
+                }
+            }
+        }
     }
 
     private fun showMessage(message: String, updateSummary: Boolean = false) {
@@ -413,22 +469,68 @@ private class JenkinsDashboardPanel(private val project: Project) {
             add(content, BorderLayout.CENTER)
         }
 
-    private fun statusIcon(job: JenkinsJobNode): String =
+    private fun statusText(job: JenkinsJobNode): String =
         when {
-            job.lastBuildBuilding || job.color.endsWith("_anime") -> "[RUN]"
-            job.lastBuildResult == "SUCCESS" || job.color == "blue" -> "[OK]"
-            job.lastBuildResult in setOf("FAILURE", "FAILED", "ERROR") || job.color == "red" -> "[FAIL]"
-            job.children.isNotEmpty() -> "[DIR]"
-            else -> "[--]"
+            job.lastBuildBuilding || job.color.endsWith("_anime") -> "RUNNING"
+            job.lastBuildResult == "SUCCESS" || job.color == "blue" -> "SUCCESS"
+            job.lastBuildResult in setOf("FAILURE", "FAILED", "ERROR") || job.color == "red" -> "FAILED"
+            job.children.isNotEmpty() -> "GROUP"
+            else -> "UNKNOWN"
         }
 
-    private fun statusIcon(status: String): String =
+    private fun toolbarButton(text: String): JButton =
+        JButton(text).apply {
+            margin = Insets(2, 8, 2, 8)
+            isFocusable = false
+        }
+
+    private fun updateHeader(build: JenkinsBuildSummary?) {
+        if (build == null) {
+            statusBadge.text = "NOT LOADED"
+            statusBadge.background = JBColor(0xE0E0E0, 0x4E5257)
+            statusBadge.foreground = JBColor.foreground()
+            buildTitle.text = "No build selected"
+            buildMeta.text = "Select a Jenkins job to inspect stages and artifacts."
+            return
+        }
+        statusBadge.text = build.state
+        statusBadge.background = statusBackground(build.state)
+        statusBadge.foreground = Color.WHITE
+        buildTitle.text = build.fullDisplayName.ifBlank { build.displayName }
+        buildMeta.text = "#${build.number}  ${formatDuration(build.durationMillis)}  ${build.artifacts.size} artifacts  ${build.stages.size} stages"
+    }
+
+    private fun preferredHtmlArtifact(artifacts: List<JenkinsArtifact>): JenkinsArtifact? {
+        val html = artifacts.filter { it.isHtml }
+        return html.firstOrNull { it.path.endsWith("index.html") && "quality" in it.path.lowercase() }
+            ?: html.firstOrNull { it.path.endsWith("index.html") && "coverage" in it.path.lowercase() }
+            ?: html.firstOrNull { it.path.endsWith("index.html") && "test" in it.path.lowercase() }
+            ?: html.firstOrNull { it.path.endsWith("index.html") }
+            ?: html.firstOrNull()
+    }
+
+    private fun jobColor(job: JenkinsJobNode, fallback: Color): Color =
+        when (statusText(job)) {
+            "SUCCESS" -> JBColor(0x2E7D32, 0x7BC47F)
+            "FAILED" -> JBColor.RED
+            "RUNNING" -> JBColor(0xB26A00, 0xF0B35A)
+            else -> fallback
+        }
+
+    private fun stageColor(status: String, fallback: Color): Color =
         when (status.uppercase()) {
-            "SUCCESS" -> "[OK]"
-            "FAILED", "FAILURE", "ERROR" -> "[FAIL]"
-            "IN_PROGRESS" -> "[RUN]"
-            "PAUSED_PENDING_INPUT" -> "[WAIT]"
-            else -> "[--]"
+            "FAILED", "FAILURE", "ERROR" -> JBColor.RED
+            "SUCCESS" -> JBColor(0x2E7D32, 0x7BC47F)
+            "IN_PROGRESS", "PAUSED_PENDING_INPUT" -> JBColor(0xB26A00, 0xF0B35A)
+            else -> fallback
+        }
+
+    private fun statusBackground(status: String): Color =
+        when (status.uppercase()) {
+            "SUCCESS" -> JBColor(0x2E7D32, 0x2E7D32)
+            "FAILED", "FAILURE", "ERROR", "ABORTED" -> JBColor(0xB00020, 0xB00020)
+            "RUNNING", "IN_PROGRESS" -> JBColor(0xB26A00, 0xB26A00)
+            else -> JBColor(0x5F6368, 0x5F6368)
         }
 
     private fun formatDuration(durationMillis: Long): String {

@@ -9,8 +9,11 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Duration
 import java.util.Base64
+import java.util.Comparator
 
 data class JenkinsBuildSummary(
     val number: Int,
@@ -75,6 +78,8 @@ data class JenkinsJobTree(
 )
 
 class JenkinsStatusClient {
+    private val maxArtifactCount = 500
+    private val maxArtifactBytes = 100L * 1024L * 1024L
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
         .followRedirects(HttpClient.Redirect.NORMAL)
@@ -119,6 +124,56 @@ class JenkinsStatusClient {
             stages = stages,
             artifacts = artifacts,
         )
+    }
+
+    fun downloadArtifacts(
+        summary: JenkinsBuildSummary,
+        username: String,
+        token: String,
+        cacheRoot: Path,
+    ): Path {
+        if (summary.artifacts.size > maxArtifactCount) {
+            throw IllegalStateException("Build has ${summary.artifacts.size} artifacts, which exceeds the limit of $maxArtifactCount.")
+        }
+
+        val buildCache = cacheRoot
+            .resolve(stableId(summary.url))
+            .resolve(summary.number.toString())
+            .normalize()
+        if (Files.exists(buildCache)) {
+            Files.walk(buildCache)
+                .sorted(Comparator.reverseOrder())
+                .forEach(Files::deleteIfExists)
+        }
+        Files.createDirectories(buildCache)
+
+        var totalBytes = 0L
+        summary.artifacts.forEach { artifact ->
+            val target = buildCache.resolve(artifact.path).normalize()
+            if (!target.startsWith(buildCache)) {
+                throw IllegalStateException("Artifact path escapes cache directory: ${artifact.path}")
+            }
+            artifact.size?.let {
+                totalBytes += it
+                if (totalBytes > maxArtifactBytes) {
+                    throw IllegalStateException("Build artifacts exceed the ${maxArtifactBytes / 1024 / 1024} MB preview limit.")
+                }
+            }
+
+            Files.createDirectories(target.parent)
+            val response = httpClient.send(request(artifact.url, username, token), HttpResponse.BodyHandlers.ofFile(target))
+            if (response.statusCode() !in 200..299) {
+                throw JenkinsHttpException(response.statusCode(), artifact.url, response.headers().firstValue("Location").orElse(null))
+            }
+            if (artifact.size == null) {
+                totalBytes += Files.size(target)
+                if (totalBytes > maxArtifactBytes) {
+                    throw IllegalStateException("Build artifacts exceed the ${maxArtifactBytes / 1024 / 1024} MB preview limit.")
+                }
+            }
+        }
+
+        return buildCache
     }
 
     fun fetchJobTree(
@@ -347,6 +402,12 @@ class JenkinsStatusClient {
 
     private fun encodeJobName(value: String): String =
         encodePathSegment(value).replace("%2F", "%252F")
+
+    private fun stableId(value: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(StandardCharsets.UTF_8))
+        return digest.take(12).joinToString("") { "%02x".format(it) }
+    }
 }
 
 private fun JsonElement.asJsonObjectOrNull(): JsonObject? =
