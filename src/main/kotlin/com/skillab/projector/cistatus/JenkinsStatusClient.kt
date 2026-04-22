@@ -138,7 +138,7 @@ class JenkinsStatusClient {
     private fun getJson(url: String, username: String, token: String): JsonObject {
         val response = httpClient.send(request(url, username, token), HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) {
-            throw IllegalStateException("Jenkins returned HTTP ${response.statusCode()} for $url")
+            throw JenkinsHttpException(response.statusCode(), url, response.headers().firstValue("Location").orElse(null))
         }
         return JsonParser.parseString(response.body()).asJsonObject
     }
@@ -146,7 +146,7 @@ class JenkinsStatusClient {
     private fun getArray(url: String, username: String, token: String): List<JsonElement> {
         val response = httpClient.send(request(url, username, token), HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) {
-            throw IllegalStateException("Jenkins returned HTTP ${response.statusCode()} for $url")
+            throw JenkinsHttpException(response.statusCode(), url, response.headers().firstValue("Location").orElse(null))
         }
         return JsonParser.parseString(response.body()).asJsonArray.toList()
     }
@@ -215,3 +215,17 @@ private fun JsonObject.array(name: String): List<JsonElement> =
 
 private fun JsonObject.obj(name: String): JsonObject? =
     get(name)?.takeUnless { it.isJsonNull }?.asJsonObjectOrNull()
+
+class JenkinsHttpException(statusCode: Int, url: String, location: String?) : IllegalStateException(
+    buildString {
+        append("Jenkins returned HTTP ")
+        append(statusCode)
+        append(" for ")
+        append(url)
+        if (statusCode in 300..399 && !location.isNullOrBlank()) {
+            append(" and redirected to ")
+            append(location)
+            append(". Check the Jenkins job path and credentials.")
+        }
+    }
+)

@@ -136,6 +136,11 @@ private class JenkinsDashboardPanel(private val project: Project) {
     }
 
     private fun refresh() {
+        if (settings.provider != "jenkins") {
+            showMessage("Select provider 'jenkins' in Settings | Tools | CI Status Notifier to use this dashboard.", updateSummary = true)
+            return
+        }
+
         if (settings.jenkinsBaseUrl.isBlank() || settings.jenkinsJobPath.isBlank()) {
             showMessage("Configure Jenkins URL and job path in Settings | Tools | CI Status Notifier.", updateSummary = true)
             return
