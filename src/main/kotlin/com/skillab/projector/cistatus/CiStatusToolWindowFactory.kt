@@ -288,10 +288,11 @@ private class JenkinsDashboardPanel(private val project: Project) {
         updateHeader(build)
         stagesModel.clear()
         build.stages.forEach(stagesModel::addElement)
-        rebuildArtifactTree(build.artifacts)
+        val htmlArtifact = preferredHtmlArtifact(build.artifacts)
+        val htmlNode = rebuildArtifactTree(build.artifacts, htmlArtifact)
+        htmlNode?.let(::selectArtifactNode)
 
         val failedStage = build.stages.firstOrNull { it.status.uppercase() in setOf("FAILED", "FAILURE", "ERROR") }
-        val htmlArtifact = preferredHtmlArtifact(build.artifacts)
         when {
             htmlArtifact != null -> previewArtifact(htmlArtifact)
             failedStage != null -> showMessage("Failed stage: ${failedStage.name}")
@@ -299,18 +300,32 @@ private class JenkinsDashboardPanel(private val project: Project) {
         }
     }
 
-    private fun rebuildArtifactTree(artifacts: List<JenkinsArtifact>) {
+    private fun rebuildArtifactTree(
+        artifacts: List<JenkinsArtifact>,
+        selectedArtifact: JenkinsArtifact?,
+    ): DefaultMutableTreeNode? {
         artifactsRoot.removeAllChildren()
+        var selectedNode: DefaultMutableTreeNode? = null
         artifacts.forEach { artifact ->
             var parent = artifactsRoot
             val parts = artifact.path.split('/').filter { it.isNotBlank() }
             parts.dropLast(1).forEach { folder ->
                 parent = findOrCreateFolder(parent, folder)
             }
-            parent.add(DefaultMutableTreeNode(artifact))
+            val artifactNode = DefaultMutableTreeNode(artifact)
+            parent.add(artifactNode)
+            if (artifact == selectedArtifact) {
+                selectedNode = artifactNode
+            }
         }
         artifactsModel.reload()
-        expandAll(artifactsTree)
+        return selectedNode
+    }
+
+    private fun selectArtifactNode(node: DefaultMutableTreeNode) {
+        val path = TreePath(node.path)
+        artifactsTree.selectionPath = path
+        artifactsTree.scrollPathToVisible(path)
     }
 
     private fun clearBuild() {
