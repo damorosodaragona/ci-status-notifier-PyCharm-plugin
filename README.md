@@ -35,14 +35,18 @@ The generated ZIP is created under:
 build/distributions/
 ```
 
-You can also download the ZIP built by GitHub Actions from the latest `Build Plugin` workflow run, under the `Artifacts` section.
+You can also download the ZIP from the latest GitHub Release:
+
+```text
+https://github.com/damorosodaragona/ci-status-notifier-PyCharm-plugin/releases/latest
+```
 
 Install it in PyCharm or IntelliJ IDEA:
 
 1. Open `Settings | Plugins`.
 2. Click the gear icon.
 3. Select `Install Plugin from Disk...`.
-4. Choose the ZIP file from `build/distributions/`.
+4. Choose the ZIP file from `build/distributions/` or from the GitHub Release assets.
 5. Restart the IDE when prompted.
 
 ## Configuration
