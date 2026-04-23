@@ -3,6 +3,9 @@ package com.skillab.projector.cistatus
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import java.io.IOException
+import java.net.CookieManager
+import java.net.CookiePolicy
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
@@ -77,12 +80,30 @@ data class JenkinsJobTree(
     val autoSelected: JenkinsJobNode?,
 )
 
+data class JenkinsDiagnosticStep(
+    val name: String,
+    val url: String,
+    val statusCode: Int?,
+    val location: String?,
+    val wwwAuthenticate: String?,
+    val contentType: String?,
+    val authHeaderSent: Boolean,
+    val bodyPreview: String,
+    val error: String?,
+) {
+    val ok: Boolean
+        get() = error == null && statusCode in 200..299 && contentType?.contains("json", ignoreCase = true) == true
+}
+
 class JenkinsStatusClient {
     private val maxArtifactCount = 500
     private val maxArtifactBytes = 100L * 1024L * 1024L
+    private val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
-        .followRedirects(HttpClient.Redirect.NORMAL)
+        .cookieHandler(cookieManager)
+        .followRedirects(HttpClient.Redirect.NEVER)
+        .version(HttpClient.Version.HTTP_1_1)
         .build()
 
     fun fetchLatestBuild(
@@ -161,7 +182,7 @@ class JenkinsStatusClient {
             }
 
             Files.createDirectories(target.parent)
-            val response = httpClient.send(request(artifact.url, username, token), HttpResponse.BodyHandlers.ofFile(target))
+            val response = sendWithRetry(artifact.url, username, token, HttpResponse.BodyHandlers.ofFile(target))
             if (response.statusCode() !in 200..299) {
                 throw JenkinsHttpException(response.statusCode(), artifact.url, response.headers().firstValue("Location").orElse(null))
             }
@@ -187,6 +208,29 @@ class JenkinsStatusClient {
         val rootUrl = buildJenkinsUrl(normalizedBaseUrl, jobPath)
         val root = fetchJobNode(rootUrl, username, token, 0, maxDepth = 5, visited = mutableSetOf())
         return JenkinsJobTree(root, findAutoSelected(root, preferredBranch))
+    }
+
+    fun diagnose(
+        baseUrl: String,
+        jobPath: String,
+        username: String,
+        token: String,
+        preferredBranch: String?,
+    ): List<JenkinsDiagnosticStep> {
+        val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
+        val rootUrl = buildJenkinsUrl(normalizedBaseUrl, "")
+        val configuredJobUrl = buildJenkinsUrl(normalizedBaseUrl, jobPath)
+        val steps = mutableListOf<JenkinsDiagnosticStep>()
+        steps += diagnosticRequest("whoAmI", "$rootUrl/whoAmI/api/json", username, token)
+        steps += diagnosticRequest("Jenkins root API", "$rootUrl/api/json", username, token)
+        steps += diagnosticRequest("Configured job root", "$configuredJobUrl/api/json", username, token)
+        val resolvedJobUrl = runCatching {
+            resolveBuildableJobUrl(configuredJobUrl, username, token, preferredBranch)
+        }.getOrNull()
+        if (!resolvedJobUrl.isNullOrBlank()) {
+            steps += diagnosticRequest("Resolved job latest build", "$resolvedJobUrl/lastBuild/api/json", username, token)
+        }
+        return steps
     }
 
     private fun resolveBuildableJobUrl(
@@ -217,8 +261,16 @@ class JenkinsStatusClient {
                 ?: jobs.firstOrNull { it.name.equals(branch.replace("/", "%2F"), ignoreCase = true) }
                 ?: jobs.firstOrNull { it.name.equals(branch.replace("/", "%252F"), ignoreCase = true) }
         }
+        if (preferred != null) {
+            return preferred.url
+        }
 
-        return (preferred ?: jobs.firstOrNull { it.name.equals("main", ignoreCase = true) } ?: jobs.first()).url
+        val recursiveRoot = fetchJobNode(configuredJobUrl, username, token, 0, maxDepth = 5, visited = mutableSetOf())
+        findAutoSelected(recursiveRoot, preferredBranch)?.let {
+            return it.url.trimEnd('/')
+        }
+
+        return (jobs.firstOrNull { it.name.equals("main", ignoreCase = true) } ?: jobs.first()).url
     }
 
     private fun fetchJobNode(
@@ -340,7 +392,7 @@ class JenkinsStatusClient {
     }
 
     private fun getJson(url: String, username: String, token: String): JsonObject {
-        val response = httpClient.send(request(url, username, token), HttpResponse.BodyHandlers.ofString())
+        val response = sendWithRetry(url, username, token, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) {
             throw JenkinsHttpException(response.statusCode(), url, response.headers().firstValue("Location").orElse(null))
         }
@@ -348,18 +400,105 @@ class JenkinsStatusClient {
     }
 
     private fun getArray(url: String, username: String, token: String): List<JsonElement> {
-        val response = httpClient.send(request(url, username, token), HttpResponse.BodyHandlers.ofString())
+        val response = sendWithRetry(url, username, token, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) {
             throw JenkinsHttpException(response.statusCode(), url, response.headers().firstValue("Location").orElse(null))
         }
         return JsonParser.parseString(response.body()).asJsonArray.toList()
     }
 
+    private fun <T> sendWithRetry(
+        url: String,
+        username: String,
+        token: String,
+        bodyHandler: HttpResponse.BodyHandler<T>,
+    ): HttpResponse<T> {
+        var lastError: IOException? = null
+        repeat(3) { attempt ->
+            try {
+                val response = httpClient.send(request(url, username, token), bodyHandler)
+                if (shouldRetry(response) && attempt < 2) {
+                    warmSession(url, username, token)
+                    sleepBeforeRetry(attempt)
+                    return@repeat
+                }
+                return response
+            } catch (error: IOException) {
+                lastError = error
+                if (attempt == 2 || !isTransientNetworkError(error)) {
+                    throw error
+                }
+                sleepBeforeRetry(attempt)
+            }
+        }
+        throw lastError ?: IOException("Jenkins request failed")
+    }
+
+    private fun shouldRetry(response: HttpResponse<*>): Boolean {
+        val location = response.headers().firstValue("Location").orElse("")
+        return response.statusCode() in setOf(401, 403, 502, 503, 504) ||
+            (response.statusCode() in 300..399 && location.contains("securityRealm", ignoreCase = true))
+    }
+
+    private fun isTransientNetworkError(error: IOException): Boolean {
+        val message = error.message.orEmpty()
+        return message.contains("GOAWAY", ignoreCase = true) ||
+            message.contains("stream", ignoreCase = true) ||
+            message.contains("closed", ignoreCase = true) ||
+            message.contains("reset", ignoreCase = true)
+    }
+
+    private fun warmSession(url: String, username: String, token: String) {
+        runCatching {
+            val root = rootUrl(url)
+            httpClient.send(request("$root/whoAmI/api/json", username, token), HttpResponse.BodyHandlers.discarding())
+        }
+    }
+
+    private fun sleepBeforeRetry(attempt: Int) {
+        Thread.sleep(250L * (attempt + 1))
+    }
+
+    private fun diagnosticRequest(name: String, url: String, username: String, token: String): JenkinsDiagnosticStep {
+        return runCatching {
+            val response = httpClient.send(request(url, username, token), HttpResponse.BodyHandlers.ofString())
+            JenkinsDiagnosticStep(
+                name = name,
+                url = url,
+                statusCode = response.statusCode(),
+                location = response.headers().firstValue("Location").orElse(null),
+                wwwAuthenticate = response.headers().firstValue("WWW-Authenticate").orElse(null),
+                contentType = response.headers().firstValue("Content-Type").orElse(null),
+                authHeaderSent = username.isNotBlank() && token.isNotBlank(),
+                bodyPreview = compactBodyPreview(response.body()),
+                error = null,
+            )
+        }.getOrElse { error ->
+            JenkinsDiagnosticStep(
+                name = name,
+                url = url,
+                statusCode = null,
+                location = null,
+                wwwAuthenticate = null,
+                contentType = null,
+                authHeaderSent = username.isNotBlank() && token.isNotBlank(),
+                bodyPreview = "",
+                error = error.message ?: error::class.java.simpleName,
+            )
+        }
+    }
+
+    private fun compactBodyPreview(body: String): String =
+        body.replace(Regex("\\s+"), " ").trim().take(240)
+
     private fun request(url: String, username: String, token: String): HttpRequest {
         val builder = HttpRequest.newBuilder()
             .uri(URI.create(url))
             .timeout(Duration.ofSeconds(20))
+            .version(HttpClient.Version.HTTP_1_1)
             .header("Accept", "application/json")
+            .header("Cache-Control", "no-cache")
+            .header("Pragma", "no-cache")
             .header("User-Agent", "skillab-ci-status-notifier")
 
         if (username.isNotBlank() && token.isNotBlank()) {
@@ -369,6 +508,14 @@ class JenkinsStatusClient {
         }
 
         return builder.build()
+    }
+
+    private fun rootUrl(url: String): String {
+        val uri = URI.create(url)
+        val port = if (uri.port >= 0) ":${uri.port}" else ""
+        val base = "${uri.scheme}://${uri.host}$port"
+        val path = uri.path.substringBefore("/job/", "").trimEnd('/')
+        return if (path.isBlank()) base else "$base$path"
     }
 
     private fun normalizeJobPath(jobPath: String): String {

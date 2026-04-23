@@ -103,6 +103,7 @@ private class JenkinsDashboardPanel(
     private val kpiPanel = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0))
     private val artifactCacheRoot: Path = Path.of(PathManager.getSystemPath(), "ci-status-notifier", "jenkins-artifacts")
     private val refreshButton = toolbarButton("Refresh", AllIcons.Actions.Refresh)
+    private val testJenkinsButton = toolbarButton("Test Jenkins", AllIcons.Actions.Lightning)
     private val openJenkinsButton = toolbarButton("Open Jenkins", AllIcons.General.Web)
     private val openArtifactButton = toolbarButton("View on Jenkins", AllIcons.General.OpenDisk)
     private val closePreviewButton = toolbarButton("", AllIcons.Actions.Close)
@@ -141,6 +142,7 @@ private class JenkinsDashboardPanel(
 
     private fun buildComponent(): JComponent {
         refreshButton.addActionListener { refresh() }
+        testJenkinsButton.addActionListener { testJenkinsConnection() }
         openJenkinsButton.addActionListener { latestBuild?.url?.let(BrowserUtil::browse) }
         openArtifactButton.addActionListener { selectedArtifact()?.url?.let(BrowserUtil::browse) }
 
@@ -166,10 +168,11 @@ private class JenkinsDashboardPanel(
         val actions = JPanel(FlowLayout(FlowLayout.RIGHT, 8, 0)).apply {
             isOpaque = false
             add(refreshButton)
+            add(testJenkinsButton)
             add(openJenkinsButton)
             add(openArtifactButton)
         }
-        actions.minimumSize = Dimension(390, 44)
+        actions.minimumSize = Dimension(520, 44)
 
         val statusHolder = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
             isOpaque = false
@@ -350,6 +353,83 @@ private class JenkinsDashboardPanel(
                     .onFailure { showError("Could not scan Jenkins jobs", it) }
             }
         }
+    }
+
+    private fun testJenkinsConnection() {
+        if (settings.jenkinsBaseUrl.isBlank()) {
+            showMessage("Configure Jenkins URL before running diagnostics.", updateSummary = true)
+            return
+        }
+
+        showMessage("Testing Jenkins connection...", updateSummary = true)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val branch = shaReader.currentBranch()
+            val token = settings.getJenkinsToken()
+            val result = runCatching {
+                jenkins.diagnose(
+                    settings.jenkinsBaseUrl,
+                    settings.jenkinsJobPath,
+                    settings.jenkinsUsername,
+                    token,
+                    branch,
+                )
+            }
+
+            SwingUtilities.invokeLater {
+                result.onSuccess { steps ->
+                    showDiagnosticReport(steps, settings.jenkinsUsername.isNotBlank(), token.isNotBlank())
+                }.onFailure {
+                    showError("Could not run Jenkins diagnostics", it)
+                }
+            }
+        }
+    }
+
+    private fun showDiagnosticReport(
+        steps: List<JenkinsDiagnosticStep>,
+        usernamePresent: Boolean,
+        tokenPresent: Boolean,
+    ) {
+        lastError = null
+        browser?.let(Disposer::dispose)
+        browser = null
+        val report = buildString {
+            appendLine("Jenkins diagnostics")
+            appendLine("Username configured: ${if (usernamePresent) "yes" else "no"}")
+            appendLine("Token present in Password Safe: ${if (tokenPresent) "yes" else "no"}")
+            appendLine("Authorization header sent: ${if (usernamePresent && tokenPresent) "yes" else "no"}")
+            appendLine()
+            steps.forEach { step ->
+                appendLine("${if (step.ok) "OK" else "FAIL"} ${step.name}")
+                appendLine("URL: ${step.url}")
+                appendLine("Status: ${step.statusCode ?: "-"}")
+                appendLine("Auth header sent: ${if (step.authHeaderSent) "yes" else "no"}")
+                if (!step.location.isNullOrBlank()) appendLine("Redirect: ${step.location}")
+                if (!step.wwwAuthenticate.isNullOrBlank()) appendLine("WWW-Authenticate: ${step.wwwAuthenticate}")
+                if (!step.contentType.isNullOrBlank()) appendLine("Content-Type: ${step.contentType}")
+                if (!step.error.isNullOrBlank()) appendLine("Error: ${step.error}")
+                if (step.bodyPreview.isNotBlank()) appendLine("Body: ${step.bodyPreview}")
+                appendLine()
+            }
+        }
+
+        previewContent.removeAll()
+        previewContent.add(JBScrollPane(JTextArea(report).apply {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+            border = EmptyBorder(8, 8, 8, 8)
+            font = Font(Font.MONOSPACED, Font.PLAIN, font.size)
+        }).apply { border = null }, BorderLayout.CENTER)
+        if (previewOpen) {
+            showPreviewContent()
+        } else {
+            previewOpen = true
+            updateMainContent()
+            showPreviewContent()
+        }
+        summary.text = "Jenkins diagnostics complete."
+        updateActions()
     }
 
     private fun showJobTree(tree: JenkinsJobTree, branch: String?) {
