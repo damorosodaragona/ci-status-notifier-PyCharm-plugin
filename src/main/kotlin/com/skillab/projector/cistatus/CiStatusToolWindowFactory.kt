@@ -355,10 +355,16 @@ private class JenkinsDashboardPanel(
             SwingUtilities.invokeLater {
                 result.onSuccess { showJobTree(it, branch) }
                     .onFailure {
-                        if (!manual && it is JenkinsAuthenticationExpiredException) {
-                            handleBackgroundAuthenticationExpired("Could not scan Jenkins jobs")
-                        } else {
-                            showError("Could not scan Jenkins jobs", it)
+                        when {
+                            !manual && it is JenkinsAuthenticationExpiredException -> {
+                                handleBackgroundAuthenticationExpired("Could not scan Jenkins jobs")
+                            }
+                            manual && it is JenkinsAuthenticationExpiredException -> {
+                                handleManualAuthenticationExpired("Could not scan Jenkins jobs")
+                            }
+                            else -> {
+                                showError("Could not scan Jenkins jobs", it)
+                            }
                         }
                     }
             }
@@ -714,6 +720,26 @@ private class JenkinsDashboardPanel(
                         if (!project.isDisposed) {
                             refresh(manual = false)
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleManualAuthenticationExpired(title: String) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val recovered = KeycloakSessionService.getInstance(project).ensureLoggedIn(settings.jenkinsBaseUrl)
+            if (recovered) {
+                authenticationPaused = false
+                ApplicationManager.getApplication().invokeLater {
+                    if (!project.isDisposed) {
+                        refresh(manual = false)
+                    }
+                }
+            } else {
+                ApplicationManager.getApplication().invokeLater {
+                    if (!project.isDisposed) {
+                        showError(title, JenkinsAuthenticationExpiredException(settings.jenkinsBaseUrl))
                     }
                 }
             }
