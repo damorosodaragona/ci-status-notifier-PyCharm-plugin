@@ -44,6 +44,9 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     private var lastObservedBranch: String? = null
 
     @Volatile
+    private var lastDetectedPushedSha: String? = null
+
+    @Volatile
     private var lastSeenBuildKey: String? = null
 
     @Volatile
@@ -61,10 +64,14 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     @Volatile
     private var heavyPollingActive: Boolean = false
 
+    @Volatile
+    private var boostedPollingUntilMillis: Long = 0L
+
     companion object {
         private const val BASE_TICK_SECONDS = 5L
         private const val INITIAL_DELAY_SECONDS = 3L
         private const val HEAVY_POLL_SECONDS = 5L
+        private const val POST_GIT_ACTIVITY_POLL_SECONDS = 180L
     }
 
     fun start() {
@@ -135,14 +142,15 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
         val headChanged = detectHeadChange()
         val pushDetected = detectPush()
         if (headChanged || pushDetected) {
+            startBoostedPolling(now)
             fetchAndHandleJenkinsSummary(if (pushDetected) "push-detected" else "head-changed")
-            nextLightPollAtMillis = now + lightPollMillis()
+            nextHeavyPollAtMillis = now + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
             return
         }
 
-        if (heavyPollingActive) {
+        if (heavyPollingActive || isBoostedPolling(now)) {
             if (now >= nextHeavyPollAtMillis) {
-                fetchAndHandleJenkinsSummary("heavy-poll")
+                fetchAndHandleJenkinsSummary(if (heavyPollingActive) "heavy-poll" else "post-git-activity-poll")
                 nextHeavyPollAtMillis = now + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
             }
             return
@@ -165,10 +173,21 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     }
 
     private fun detectPush(): Boolean {
+        val currentSha = shaReader.currentSha() ?: return false
         val current = shaReader.outgoingCommitCount() ?: return false
         val previous = lastOutgoingCommitCount
         lastOutgoingCommitCount = current
-        return previous != null && previous > 0 && current == 0
+        if (previous != null && previous > 0 && current == 0) {
+            lastDetectedPushedSha = currentSha
+            return true
+        }
+
+        if (current > 0 && lastDetectedPushedSha != currentSha && shaReader.originBranchSha() == currentSha) {
+            lastDetectedPushedSha = currentSha
+            return true
+        }
+
+        return false
     }
 
     private fun fetchAndHandleJenkinsSummary(reason: String) {
@@ -223,6 +242,12 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             lastFingerprint = fingerprint
         }
     }
+
+    private fun startBoostedPolling(now: Long) {
+        boostedPollingUntilMillis = now + TimeUnit.SECONDS.toMillis(POST_GIT_ACTIVITY_POLL_SECONDS)
+    }
+
+    private fun isBoostedPolling(now: Long): Boolean = now < boostedPollingUntilMillis
 
     private fun requestToolWindowRefresh(reason: String) {
         ApplicationManager.getApplication().invokeLater {

@@ -20,6 +20,12 @@ class GitShaReader(private val project: Project) {
         return count.toIntOrNull()
     }
 
+    fun originBranchSha(): String? {
+        val branch = currentBranch() ?: return null
+        val line = runGit("ls-remote", "--heads", "origin", "refs/heads/$branch") ?: return null
+        return line.substringBefore('\t').takeIf { it.matches(Regex("[0-9a-fA-F]{40}")) }
+    }
+
     fun originRepository(): String? {
         val remote = runGit("config", "--get", "remote.origin.url") ?: return null
         val match = Regex("github\\.com[:/]([^/]+/[^/.]+)(?:\\.git)?$").find(remote)
