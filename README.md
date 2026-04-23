@@ -70,6 +70,13 @@ Configure Jenkins mode:
 - Optional Jenkins username and API token.
 - Poll interval in seconds.
 
+Some Jenkins instances require an active web session (Keycloak / OIDC) to allow API access.
+
+**Recommended solution:**  
+Enable API access without requiring an OIDC session on the Jenkins server.
+
+If that is not possible and you are using Keycloak, you can try enabling the **experimental Keycloak auto-login** feature in the plugin settings.
+
 Jenkins mode adds a `CI Status` tool window that scans the configured Jenkins root, auto-selects the build job that best matches the current Git branch, and still shows the Jenkins job tree as a manual fallback. Selecting a job shows its latest build, Pipeline stages, artifacts, and an in-IDE preview for HTML report artifacts when the IDE supports embedded browser rendering. HTML previews download all artifacts for the selected build into the IDE cache while preserving artifact paths, so linked CSS, scripts, images, and relative links keep working locally.
 
 Tokens are stored in the JetBrains Password Safe.

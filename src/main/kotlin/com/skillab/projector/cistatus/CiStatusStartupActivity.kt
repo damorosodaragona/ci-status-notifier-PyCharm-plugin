@@ -24,7 +24,7 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     private val settings = CiStatusSettings.getInstance(project)
     private val shaReader = GitShaReader(project)
     private val github = GitHubStatusClient()
-    private val jenkins = JenkinsStatusClient()
+    private val jenkins = JenkinsStatusClient(project)
     private val notifier = CiStatusNotifier(project)
     private val running = AtomicBoolean(false)
 

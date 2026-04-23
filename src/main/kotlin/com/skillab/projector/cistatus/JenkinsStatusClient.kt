@@ -1,5 +1,6 @@
 package com.skillab.projector.cistatus
 
+import com.intellij.openapi.project.Project
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -95,7 +96,7 @@ data class JenkinsDiagnosticStep(
         get() = error == null && statusCode in 200..299 && contentType?.contains("json", ignoreCase = true) == true
 }
 
-class JenkinsStatusClient {
+class JenkinsStatusClient(private val project: Project? = null) {
     private val maxArtifactCount = 500
     private val maxArtifactBytes = 100L * 1024L * 1024L
     private val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
@@ -414,9 +415,20 @@ class JenkinsStatusClient {
         bodyHandler: HttpResponse.BodyHandler<T>,
     ): HttpResponse<T> {
         var lastError: IOException? = null
+        var interactiveFallbackTried = false
         repeat(3) { attempt ->
             try {
-                val response = httpClient.send(request(url, username, token), bodyHandler)
+                var response = httpClient.send(request(url, username, token), bodyHandler)
+                if (!interactiveFallbackTried && shouldTriggerInteractiveFallback(response, url)) {
+                    interactiveFallbackTried = true
+                    val recovered = attemptInteractiveFallback(url)
+                    if (recovered) {
+                        response = httpClient.send(request(url, username, token), bodyHandler)
+                        if (response.statusCode() !in setOf(401, 403) && !isSecurityRedirect(response)) {
+                            return response
+                        }
+                    }
+                }
                 if (shouldRetry(response) && attempt < 2) {
                     warmSession(url, username, token)
                     sleepBeforeRetry(attempt)
@@ -438,6 +450,31 @@ class JenkinsStatusClient {
         val location = response.headers().firstValue("Location").orElse("")
         return response.statusCode() in setOf(401, 403, 502, 503, 504) ||
             (response.statusCode() in 300..399 && location.contains("securityRealm", ignoreCase = true))
+    }
+
+    private fun shouldTriggerInteractiveFallback(response: HttpResponse<*>, url: String): Boolean {
+        val project = project ?: return false
+        val settings = CiStatusSettings.getInstance(project)
+        if (!settings.experimentalKeycloakInteractiveFallback) return false
+        if (!url.startsWith(settings.jenkinsBaseUrl, ignoreCase = true)) return false
+        return response.statusCode() in setOf(401, 403) || isSecurityRedirect(response)
+    }
+
+    private fun isSecurityRedirect(response: HttpResponse<*>): Boolean {
+        val location = response.headers().firstValue("Location").orElse("")
+        return response.statusCode() in 300..399 && (
+            location.contains("securityRealm", ignoreCase = true) ||
+                location.contains("commenceLogin", ignoreCase = true) ||
+                location.contains("keycloak", ignoreCase = true)
+            )
+    }
+
+    private fun attemptInteractiveFallback(url: String): Boolean {
+        val project = project ?: return false
+        val settings = CiStatusSettings.getInstance(project)
+        if (!settings.experimentalKeycloakInteractiveFallback) return false
+        val service = KeycloakSessionService.getInstance(project)
+        return service.ensureLoggedIn(rootUrl(url))
     }
 
     private fun isTransientNetworkError(error: IOException): Boolean {

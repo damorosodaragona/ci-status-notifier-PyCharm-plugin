@@ -78,7 +78,7 @@ private class JenkinsDashboardPanel(
     private val toolWindow: ToolWindow,
 ) : Disposable {
     private val settings = CiStatusSettings.getInstance(project)
-    private val jenkins = JenkinsStatusClient()
+    private val jenkins = JenkinsStatusClient(project)
     private val shaReader = GitShaReader(project)
 
     private val summary = JBLabel("Configure Jenkins in Settings | Tools | CI Status Notifier.")

@@ -26,6 +26,10 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
     private val notifyPending = JBCheckBox("Notify pending statuses")
     private val notifySuccess = JBCheckBox("Notify successful statuses")
     private val notifyFailure = JBCheckBox("Notify failed/error statuses")
+    private val experimentalKeycloakInteractiveFallback = JBCheckBox("Enable Keycloak interactive login fallback (experimental)")
+    private val experimentalKeycloakAutoLogin = JBCheckBox("Enable Keycloak auto-login (experimental)")
+    private val keycloakWebUsername = JBTextField()
+    private val keycloakWebPassword = JBPasswordField()
     private var panel: JPanel? = null
 
     override fun getDisplayName(): String = "CI Status Notifier"
@@ -41,7 +45,14 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
             .addLabeledComponent("Jenkins scan root", jenkinsJobPath)
             .addLabeledComponent("Jenkins username", jenkinsUsername)
             .addLabeledComponent("Jenkins API token", jenkinsToken)
-            .addComponent(JBLabel("Jenkins scan root is optional. Leave blank to scan from the Jenkins root, or set a raw/slash-separated path to narrow the scan."))
+            .addComponent(JBLabel("Jenkins scan root is optional. Leave blank to scan from the Jenkins root, or set a raw (job/Folder/job/project) or slash-separated (Folder/project) path to narrow the scan. Root scans require Jenkins permissions that allow reading the global Jenkins root."))
+            .addComponent(JBLabel("This Jenkins instance may require an active Keycloak (OIDC) session for API access."))
+            .addComponent(JBLabel("Recommended: enable API access without OIDC session on the Jenkins server."))
+            .addComponent(JBLabel("Otherwise, you can try the experimental Keycloak auto-login feature."))
+            .addComponent(experimentalKeycloakInteractiveFallback)
+            .addComponent(experimentalKeycloakAutoLogin)
+            .addLabeledComponent("Keycloak web username", keycloakWebUsername)
+            .addLabeledComponent("Keycloak web password", keycloakWebPassword)
             .addLabeledComponent("Poll interval seconds", pollInterval)
             .addComponent(notifyPending)
             .addComponent(notifySuccess)
@@ -61,6 +72,10 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
             jenkinsJobPath.text.trim().trim('/') != settings.jenkinsJobPath ||
             jenkinsUsername.text.trim() != settings.jenkinsUsername ||
             String(jenkinsToken.password) != settings.getJenkinsToken() ||
+            experimentalKeycloakInteractiveFallback.isSelected != settings.experimentalKeycloakInteractiveFallback ||
+            experimentalKeycloakAutoLogin.isSelected != settings.experimentalKeycloakAutoLogin ||
+            keycloakWebUsername.text.trim() != settings.keycloakWebUsername ||
+            String(keycloakWebPassword.password) != settings.getKeycloakWebPassword() ||
             pollInterval.text.trim() != settings.pollIntervalSeconds.toString() ||
             notifyPending.isSelected != settings.notifyPending ||
             notifySuccess.isSelected != settings.notifySuccess ||
@@ -76,6 +91,10 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
         settings.jenkinsJobPath = jenkinsJobPath.text
         settings.jenkinsUsername = jenkinsUsername.text
         settings.setJenkinsToken(String(jenkinsToken.password))
+        settings.experimentalKeycloakInteractiveFallback = experimentalKeycloakInteractiveFallback.isSelected
+        settings.experimentalKeycloakAutoLogin = experimentalKeycloakAutoLogin.isSelected
+        settings.keycloakWebUsername = keycloakWebUsername.text
+        settings.setKeycloakWebPassword(String(keycloakWebPassword.password))
         settings.pollIntervalSeconds = pollInterval.text.toIntOrNull() ?: 60
         settings.notifyPending = notifyPending.isSelected
         settings.notifySuccess = notifySuccess.isSelected
@@ -91,6 +110,10 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
         jenkinsJobPath.text = settings.jenkinsJobPath
         jenkinsUsername.text = settings.jenkinsUsername
         jenkinsToken.text = settings.getJenkinsToken()
+        experimentalKeycloakInteractiveFallback.isSelected = settings.experimentalKeycloakInteractiveFallback
+        experimentalKeycloakAutoLogin.isSelected = settings.experimentalKeycloakAutoLogin
+        keycloakWebUsername.text = settings.keycloakWebUsername
+        keycloakWebPassword.text = settings.getKeycloakWebPassword()
         pollInterval.text = settings.pollIntervalSeconds.toString()
         notifyPending.isSelected = settings.notifyPending
         notifySuccess.isSelected = settings.notifySuccess
