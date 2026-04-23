@@ -53,7 +53,13 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     private var lastSeenBuildState: String? = null
 
     @Volatile
+    private var lastRunningNotificationKey: String? = null
+
+    @Volatile
     private var trackedRunningBuildKey: String? = null
+
+    @Volatile
+    private var observedJenkinsJobUrl: String? = null
 
     @Volatile
     private var nextLightPollAtMillis: Long = 0L
@@ -70,11 +76,18 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     companion object {
         private const val BASE_TICK_SECONDS = 5L
         private const val INITIAL_DELAY_SECONDS = 3L
-        private const val HEAVY_POLL_SECONDS = 5L
+        private const val HEAVY_POLL_SECONDS = 10L
         private const val POST_GIT_ACTIVITY_POLL_SECONDS = 180L
     }
 
     fun start() {
+        project.messageBus.connect(this).subscribe(CiStatusJenkinsBuildListener.TOPIC, object : CiStatusJenkinsBuildListener {
+            override fun buildObserved(jobUrl: String, summary: JenkinsBuildSummary) {
+                observedJenkinsJobUrl = jobUrl.trimEnd('/')
+                handleJenkinsSummary(summary, "tool-window-observed")
+            }
+        })
+
         future = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(
             { pollSafely() },
             INITIAL_DELAY_SECONDS,
@@ -142,6 +155,9 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
         val headChanged = detectHeadChange()
         val pushDetected = detectPush()
         if (headChanged || pushDetected) {
+            if (headChanged) {
+                observedJenkinsJobUrl = null
+            }
             startBoostedPolling(now)
             fetchAndHandleJenkinsSummary(if (pushDetected) "push-detected" else "head-changed")
             nextHeavyPollAtMillis = now + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
@@ -191,13 +207,18 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     }
 
     private fun fetchAndHandleJenkinsSummary(reason: String) {
-        val summary = jenkins.fetchLatestBuild(
-            settings.jenkinsBaseUrl,
-            settings.jenkinsJobPath,
-            settings.jenkinsUsername,
-            settings.getJenkinsToken(),
-            shaReader.currentBranch(),
-        )
+        val monitoredJobUrl = observedJenkinsJobUrl
+        val summary = if (!monitoredJobUrl.isNullOrBlank()) {
+            jenkins.fetchLatestBuildForJobUrl(monitoredJobUrl, settings.jenkinsUsername, settings.getJenkinsToken())
+        } else {
+            jenkins.fetchLatestBuild(
+                settings.jenkinsBaseUrl,
+                settings.jenkinsJobPath,
+                settings.jenkinsUsername,
+                settings.getJenkinsToken(),
+                shaReader.currentBranch(),
+            )
+        }
         handleJenkinsSummary(summary, reason)
     }
 
@@ -218,6 +239,14 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             heavyPollingActive = true
             trackedRunningBuildKey = buildKey
             nextHeavyPollAtMillis = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
+            if ((isNewBuild || stateChanged) && lastRunningNotificationKey != buildKey) {
+                lastRunningNotificationKey = buildKey
+                ApplicationManager.getApplication().invokeLater {
+                    if (!project.isDisposed) {
+                        notifier.notify(summary)
+                    }
+                }
+            }
         } else if (trackedRunningBuildKey == buildKey && previousState == "RUNNING" && isFinalJenkinsState(state)) {
             heavyPollingActive = false
             trackedRunningBuildKey = null
