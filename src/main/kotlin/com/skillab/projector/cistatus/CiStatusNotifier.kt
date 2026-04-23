@@ -1,11 +1,13 @@
 package com.skillab.projector.cistatus
 
+import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
-import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
+import com.intellij.openapi.wm.ToolWindowManager
 
 class CiStatusNotifier(private val project: Project) {
     fun notify(summary: CommitStatusSummary) {
@@ -26,6 +28,10 @@ class CiStatusNotifier(private val project: Project) {
         val notification = NotificationGroupManager.getInstance()
             .getNotificationGroup("CI Status Notifier")
             .createNotification(title, content, notificationType)
+
+        notification.addAction(NotificationAction.createSimple("Show CI Status") {
+            showCiStatus()
+        })
 
         summary.targetUrl?.let { targetUrl ->
             notification.addAction(NotificationAction.createSimple("Open details") {
@@ -68,6 +74,9 @@ class CiStatusNotifier(private val project: Project) {
             .getNotificationGroup("CI Status Notifier")
             .createNotification(title, content, notificationType)
 
+        notification.addAction(NotificationAction.createSimple("Show CI Status") {
+            showCiStatus()
+        })
         notification.addAction(NotificationAction.createSimple("Open Jenkins") {
             BrowserUtil.browse(summary.url)
         })
@@ -85,6 +94,15 @@ class CiStatusNotifier(private val project: Project) {
             .getNotificationGroup("CI Status Notifier")
             .createNotification("CI Status Notifier", message, NotificationType.WARNING)
             .notify(project)
+    }
+
+    private fun showCiStatus() {
+        ApplicationManager.getApplication().invokeLater {
+            if (project.isDisposed) return@invokeLater
+            val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("CI Status") ?: return@invokeLater
+            toolWindow.show()
+            project.messageBus.syncPublisher(CiStatusRefreshListener.TOPIC).refreshRequested("notification")
+        }
     }
 
     private fun buildContent(summary: CommitStatusSummary): String {

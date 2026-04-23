@@ -14,6 +14,12 @@ class GitShaReader(private val project: Project) {
             ?: runGit("rev-parse", "--abbrev-ref", "HEAD")?.takeUnless { it == "HEAD" }
     }
 
+    fun outgoingCommitCount(): Int? {
+        val upstream = runGit("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}") ?: return null
+        val count = runGit("rev-list", "--count", "$upstream..HEAD") ?: return null
+        return count.toIntOrNull()
+    }
+
     fun originRepository(): String? {
         val remote = runGit("config", "--get", "remote.origin.url") ?: return null
         val match = Regex("github\\.com[:/]([^/]+/[^/.]+)(?:\\.git)?$").find(remote)

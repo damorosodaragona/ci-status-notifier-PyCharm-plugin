@@ -34,12 +34,44 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     @Volatile
     private var lastFingerprint: String? = null
 
+    @Volatile
+    private var lastOutgoingCommitCount: Int? = null
+
+    @Volatile
+    private var lastObservedSha: String? = null
+
+    @Volatile
+    private var lastObservedBranch: String? = null
+
+    @Volatile
+    private var lastSeenBuildKey: String? = null
+
+    @Volatile
+    private var lastSeenBuildState: String? = null
+
+    @Volatile
+    private var trackedRunningBuildKey: String? = null
+
+    @Volatile
+    private var nextLightPollAtMillis: Long = 0L
+
+    @Volatile
+    private var nextHeavyPollAtMillis: Long = 0L
+
+    @Volatile
+    private var heavyPollingActive: Boolean = false
+
+    companion object {
+        private const val BASE_TICK_SECONDS = 5L
+        private const val INITIAL_DELAY_SECONDS = 3L
+        private const val HEAVY_POLL_SECONDS = 5L
+    }
+
     fun start() {
-        val interval = settings.pollIntervalSeconds.toLong()
         future = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(
             { pollSafely() },
-            10,
-            interval,
+            INITIAL_DELAY_SECONDS,
+            BASE_TICK_SECONDS,
             TimeUnit.SECONDS,
         )
     }
@@ -64,7 +96,7 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
         }
 
         if (settings.provider == "jenkins") {
-            pollJenkins()
+            pollJenkinsLoop()
         } else {
             pollGitHub()
         }
@@ -94,11 +126,52 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
         }
     }
 
-    private fun pollJenkins() {
+    private fun pollJenkinsLoop() {
         if (settings.jenkinsBaseUrl.isBlank()) {
             return
         }
 
+        val now = System.currentTimeMillis()
+        val headChanged = detectHeadChange()
+        val pushDetected = detectPush()
+        if (headChanged || pushDetected) {
+            fetchAndHandleJenkinsSummary(if (pushDetected) "push-detected" else "head-changed")
+            nextLightPollAtMillis = now + lightPollMillis()
+            return
+        }
+
+        if (heavyPollingActive) {
+            if (now >= nextHeavyPollAtMillis) {
+                fetchAndHandleJenkinsSummary("heavy-poll")
+                nextHeavyPollAtMillis = now + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
+            }
+            return
+        }
+
+        if (nextLightPollAtMillis == 0L || now >= nextLightPollAtMillis) {
+            fetchAndHandleJenkinsSummary("light-poll")
+            nextLightPollAtMillis = now + lightPollMillis()
+        }
+    }
+
+    private fun detectHeadChange(): Boolean {
+        val currentSha = shaReader.currentSha() ?: return false
+        val currentBranch = shaReader.currentBranch()
+        val previousSha = lastObservedSha
+        val previousBranch = lastObservedBranch
+        lastObservedSha = currentSha
+        lastObservedBranch = currentBranch
+        return previousSha != null && (currentSha != previousSha || currentBranch != previousBranch)
+    }
+
+    private fun detectPush(): Boolean {
+        val current = shaReader.outgoingCommitCount() ?: return false
+        val previous = lastOutgoingCommitCount
+        lastOutgoingCommitCount = current
+        return previous != null && previous > 0 && current == 0
+    }
+
+    private fun fetchAndHandleJenkinsSummary(reason: String) {
         val summary = jenkins.fetchLatestBuild(
             settings.jenkinsBaseUrl,
             settings.jenkinsJobPath,
@@ -106,21 +179,62 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             settings.getJenkinsToken(),
             shaReader.currentBranch(),
         )
-        if (!shouldNotifyJenkins(summary.state)) {
-            lastFingerprint = fingerprint(summary)
-            return
+        handleJenkinsSummary(summary, reason)
+    }
+
+    private fun handleJenkinsSummary(summary: JenkinsBuildSummary, reason: String) {
+        val buildKey = buildKey(summary)
+        val state = summary.state
+        val previousBuildKey = lastSeenBuildKey
+        val previousState = lastSeenBuildState
+        val isNewBuild = buildKey != previousBuildKey
+        val stateChanged = state != previousState
+        val fingerprint = fingerprint(summary)
+
+        if (isNewBuild || stateChanged || reason == "push-detected") {
+            requestToolWindowRefresh(reason)
         }
 
-        val fingerprint = fingerprint(summary)
-        if (fingerprint != lastFingerprint) {
-            lastFingerprint = fingerprint
-            ApplicationManager.getApplication().invokeLater {
-                if (!project.isDisposed) {
-                    notifier.notify(summary)
+        if (state == "RUNNING") {
+            heavyPollingActive = true
+            trackedRunningBuildKey = buildKey
+            nextHeavyPollAtMillis = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
+        } else if (trackedRunningBuildKey == buildKey && previousState == "RUNNING" && isFinalJenkinsState(state)) {
+            heavyPollingActive = false
+            trackedRunningBuildKey = null
+            nextLightPollAtMillis = System.currentTimeMillis() + lightPollMillis()
+            if (shouldNotifyJenkins(state) && fingerprint != lastFingerprint) {
+                lastFingerprint = fingerprint
+                ApplicationManager.getApplication().invokeLater {
+                    if (!project.isDisposed) {
+                        notifier.notify(summary)
+                    }
                 }
             }
         }
+
+        if (!heavyPollingActive && state != "RUNNING") {
+            trackedRunningBuildKey = null
+        }
+
+        lastSeenBuildKey = buildKey
+        lastSeenBuildState = state
+        if (!stateChanged && !isNewBuild && reason != "push-detected") {
+            lastFingerprint = fingerprint
+        }
     }
+
+    private fun requestToolWindowRefresh(reason: String) {
+        ApplicationManager.getApplication().invokeLater {
+            if (!project.isDisposed) {
+                project.messageBus.syncPublisher(CiStatusRefreshListener.TOPIC).refreshRequested(reason)
+            }
+        }
+    }
+
+    private fun lightPollMillis(): Long = TimeUnit.SECONDS.toMillis(settings.pollIntervalSeconds.toLong())
+
+    private fun buildKey(summary: JenkinsBuildSummary): String = "${summary.url}#${summary.number}"
 
     private fun shouldNotify(state: String): Boolean {
         return when (state) {
@@ -139,6 +253,8 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             else -> true
         }
     }
+
+    private fun isFinalJenkinsState(state: String): Boolean = state.uppercase() in setOf("SUCCESS", "FAILURE", "FAILED", "ERROR", "ABORTED", "UNSTABLE", "NOT_BUILT")
 
     private fun fingerprint(summary: CommitStatusSummary): String {
         val statusFingerprint = summary.statuses
