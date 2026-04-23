@@ -122,6 +122,7 @@ private class JenkinsDashboardPanel(
     private val autoRefreshRunning = AtomicBoolean(false)
     private var autoRefreshFuture: ScheduledFuture<*>? = null
     private val baseToolWindowIcon: Icon? = toolWindow.icon
+    private var authenticationPaused: Boolean = false
 
     val component: JComponent = buildComponent()
 
@@ -132,7 +133,7 @@ private class JenkinsDashboardPanel(
         project.messageBus.connect(this).subscribe(CiStatusRefreshListener.TOPIC, object : CiStatusRefreshListener {
             override fun refreshRequested(reason: String) {
                 if (!project.isDisposed) {
-                    refresh()
+                    refresh(manual = false)
                 }
             }
         })
@@ -141,7 +142,7 @@ private class JenkinsDashboardPanel(
     }
 
     private fun buildComponent(): JComponent {
-        refreshButton.addActionListener { refresh() }
+        refreshButton.addActionListener { refresh(manual = true) }
         testJenkinsButton.addActionListener { testJenkinsConnection() }
         openJenkinsButton.addActionListener { latestBuild?.url?.let(BrowserUtil::browse) }
         openArtifactButton.addActionListener { selectedArtifact()?.url?.let(BrowserUtil::browse) }
@@ -324,7 +325,8 @@ private class JenkinsDashboardPanel(
         stages.cellRenderer = StageRenderer()
     }
 
-    private fun refresh() {
+    private fun refresh(manual: Boolean = false) {
+        authenticationPaused = false
         if (settings.provider != "jenkins") {
             showMessage("Select provider 'jenkins' in Settings | Tools | CI Status Notifier to use this dashboard.", updateSummary = true)
             return
@@ -339,18 +341,26 @@ private class JenkinsDashboardPanel(
         ApplicationManager.getApplication().executeOnPooledThread {
             val branch = shaReader.currentBranch()
             val result = runCatching {
-                jenkins.fetchJobTree(
-                    settings.jenkinsBaseUrl,
-                    settings.jenkinsJobPath,
-                    settings.jenkinsUsername,
-                    settings.getJenkinsToken(),
-                    branch,
-                )
+                JenkinsStatusClient.withRequestMode(if (manual) JenkinsRequestMode.MANUAL else JenkinsRequestMode.BACKGROUND) {
+                    jenkins.fetchJobTree(
+                        settings.jenkinsBaseUrl,
+                        settings.jenkinsJobPath,
+                        settings.jenkinsUsername,
+                        settings.getJenkinsToken(),
+                        branch,
+                    )
+                }
             }
 
             SwingUtilities.invokeLater {
                 result.onSuccess { showJobTree(it, branch) }
-                    .onFailure { showError("Could not scan Jenkins jobs", it) }
+                    .onFailure {
+                        if (!manual && it is JenkinsAuthenticationExpiredException) {
+                            handleBackgroundAuthenticationExpired("Could not scan Jenkins jobs")
+                        } else {
+                            showError("Could not scan Jenkins jobs", it)
+                        }
+                    }
             }
         }
     }
@@ -366,13 +376,15 @@ private class JenkinsDashboardPanel(
             val branch = shaReader.currentBranch()
             val token = settings.getJenkinsToken()
             val result = runCatching {
-                jenkins.diagnose(
-                    settings.jenkinsBaseUrl,
-                    settings.jenkinsJobPath,
-                    settings.jenkinsUsername,
-                    token,
-                    branch,
-                )
+                JenkinsStatusClient.withRequestMode(JenkinsRequestMode.MANUAL) {
+                    jenkins.diagnose(
+                        settings.jenkinsBaseUrl,
+                        settings.jenkinsJobPath,
+                        settings.jenkinsUsername,
+                        token,
+                        branch,
+                    )
+                }
             }
 
             SwingUtilities.invokeLater {
@@ -611,7 +623,7 @@ private class JenkinsDashboardPanel(
     }
 
     private fun autoRefresh() {
-        if (project.isDisposed || settings.provider != "jenkins" || settings.jenkinsBaseUrl.isBlank()) {
+        if (project.isDisposed || settings.provider != "jenkins" || settings.jenkinsBaseUrl.isBlank() || authenticationPaused) {
             return
         }
 
@@ -667,7 +679,9 @@ private class JenkinsDashboardPanel(
 
     private fun refreshSelectedBuild(jobUrl: String) {
         val result = runCatching {
-            jenkins.fetchLatestBuildForJobUrl(jobUrl, settings.jenkinsUsername, settings.getJenkinsToken())
+            JenkinsStatusClient.withRequestMode(JenkinsRequestMode.BACKGROUND) {
+                jenkins.fetchLatestBuildForJobUrl(jobUrl, settings.jenkinsUsername, settings.getJenkinsToken())
+            }
         }
         SwingUtilities.invokeLater {
             if (project.isDisposed) {
@@ -676,7 +690,32 @@ private class JenkinsDashboardPanel(
             result.onSuccess { build ->
                 showBuild(jobUrl, build, refreshPreview = build.state != "RUNNING")
             }.onFailure {
-                showError("Could not refresh running Jenkins build", it, notify = false)
+                if (it is JenkinsAuthenticationExpiredException) {
+                    handleBackgroundAuthenticationExpired("Jenkins authentication expired")
+                } else {
+                    showError("Could not refresh running Jenkins build", it, notify = false)
+                }
+            }
+        }
+    }
+
+
+    private fun handleBackgroundAuthenticationExpired(title: String) {
+        authenticationPaused = true
+        summary.text = "Monitoring paused - Jenkins authentication expired."
+        updateToolWindowIcon(null)
+        buildMeta.text = "Monitoring paused until you login again."
+        CiStatusNotifier(project).notifyJenkinsAuthenticationExpired {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val recovered = KeycloakSessionService.getInstance(project).ensureLoggedIn(settings.jenkinsBaseUrl)
+                if (recovered) {
+                    authenticationPaused = false
+                    ApplicationManager.getApplication().invokeLater {
+                        if (!project.isDisposed) {
+                            refresh(manual = false)
+                        }
+                    }
+                }
             }
         }
     }
