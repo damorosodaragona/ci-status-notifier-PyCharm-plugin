@@ -19,6 +19,8 @@ repositories {
 }
 
 dependencies {
+    testImplementation(kotlin("test-junit5"))
+
     intellijPlatform {
         val localPyCharm = file("/Applications/PyCharm.app")
         if (localPyCharm.exists() && !providers.environmentVariable("CI").isPresent) {
@@ -46,4 +48,9 @@ tasks {
     patchPluginXml {
         sinceBuild.set("233")
     }
+}
+
+
+tasks.test {
+    useJUnitPlatform()
 }

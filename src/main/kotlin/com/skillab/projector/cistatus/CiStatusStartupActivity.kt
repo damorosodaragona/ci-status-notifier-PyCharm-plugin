@@ -154,12 +154,12 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
 
         val sha = shaReader.currentSha() ?: return
         val summary = github.fetch(repository, sha, settings.getToken())
-        if (!shouldNotify(summary.state)) {
-            lastFingerprint = fingerprint(summary)
+        if (!CiStatusBuildLogic.shouldNotifyGitHub(summary.state, settings.notifyPending, settings.notifySuccess, settings.notifyFailure)) {
+            lastFingerprint = CiStatusBuildLogic.fingerprint(summary)
             return
         }
 
-        val fingerprint = fingerprint(summary)
+        val fingerprint = CiStatusBuildLogic.fingerprint(summary)
         if (fingerprint != lastFingerprint) {
             lastFingerprint = fingerprint
             ApplicationManager.getApplication().invokeLater {
@@ -251,15 +251,25 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
     }
 
     private fun handleJenkinsSummary(summary: JenkinsBuildSummary, reason: String) {
-        val buildKey = buildKey(summary)
+        val buildKey = CiStatusBuildLogic.buildKey(summary)
         val state = summary.state
-        val previousBuildKey = lastSeenBuildKey
-        val previousState = lastSeenBuildState
-        val isNewBuild = buildKey != previousBuildKey
-        val stateChanged = state != previousState
-        val fingerprint = fingerprint(summary)
+        val fingerprint = CiStatusBuildLogic.fingerprint(summary)
+        val decision = CiStatusBuildLogic.evaluateJenkinsTransition(
+            currentBuildKey = buildKey,
+            currentState = state,
+            previousBuildKey = lastSeenBuildKey,
+            previousState = lastSeenBuildState,
+            trackedRunningBuildKey = trackedRunningBuildKey,
+            lastRunningNotificationKey = lastRunningNotificationKey,
+            currentFingerprint = fingerprint,
+            lastFingerprint = lastFingerprint,
+            reason = reason,
+            notifyPending = settings.notifyPending,
+            notifySuccess = settings.notifySuccess,
+            notifyFailure = settings.notifyFailure,
+        )
 
-        if (isNewBuild || stateChanged || reason == "push-detected") {
+        if (decision.requestRefresh) {
             requestToolWindowRefresh(reason)
         }
 
@@ -267,7 +277,7 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             heavyPollingActive = true
             trackedRunningBuildKey = buildKey
             nextHeavyPollAtMillis = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
-            if ((isNewBuild || stateChanged) && lastRunningNotificationKey != buildKey) {
+            if (decision.notifyRunningStarted) {
                 lastRunningNotificationKey = buildKey
                 ApplicationManager.getApplication().invokeLater {
                     if (!project.isDisposed) {
@@ -275,11 +285,11 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
                     }
                 }
             }
-        } else if (trackedRunningBuildKey == buildKey && previousState == "RUNNING" && isFinalJenkinsState(state)) {
+        } else if (decision.trackedRunningFinished) {
             heavyPollingActive = false
             trackedRunningBuildKey = null
             nextLightPollAtMillis = System.currentTimeMillis() + lightPollMillis()
-            if (shouldNotifyJenkins(state) && fingerprint != lastFingerprint) {
+            if (decision.notifyRunningFinished) {
                 lastFingerprint = fingerprint
                 ApplicationManager.getApplication().invokeLater {
                     if (!project.isDisposed) {
@@ -295,7 +305,7 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
 
         lastSeenBuildKey = buildKey
         lastSeenBuildState = state
-        if (!stateChanged && !isNewBuild && reason != "push-detected") {
+        if (decision.storeFingerprintWhenUnchanged) {
             lastFingerprint = fingerprint
         }
     }
@@ -316,42 +326,6 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
 
     private fun lightPollMillis(): Long = TimeUnit.SECONDS.toMillis(settings.pollIntervalSeconds.toLong())
 
-    private fun buildKey(summary: JenkinsBuildSummary): String = "${summary.url}#${summary.number}"
-
-    private fun shouldNotify(state: String): Boolean {
-        return when (state) {
-            "pending" -> settings.notifyPending
-            "success" -> settings.notifySuccess
-            "failure", "error" -> settings.notifyFailure
-            else -> true
-        }
-    }
-
-    private fun shouldNotifyJenkins(state: String): Boolean {
-        return when (state) {
-            "RUNNING" -> settings.notifyPending
-            "SUCCESS" -> settings.notifySuccess
-            "FAILURE", "FAILED", "ERROR", "ABORTED" -> settings.notifyFailure
-            else -> true
-        }
-    }
-
-    private fun isFinalJenkinsState(state: String): Boolean = state.uppercase() in setOf("SUCCESS", "FAILURE", "FAILED", "ERROR", "ABORTED", "UNSTABLE", "NOT_BUILT")
-
-    private fun fingerprint(summary: CommitStatusSummary): String {
-        val statusFingerprint = summary.statuses
-            .sortedBy { it.context }
-            .joinToString("|") { "${it.context}:${it.state}:${it.description}:${it.targetUrl}" }
-        return "${summary.sha}:${summary.state}:$statusFingerprint"
-    }
-
-    private fun fingerprint(summary: JenkinsBuildSummary): String {
-        val stageFingerprint = summary.stages
-            .joinToString("|") { "${it.id}:${it.name}:${it.status}:${it.durationMillis}" }
-        val artifactFingerprint = summary.artifacts
-            .joinToString("|") { "${it.path}:${it.url}:${it.size}" }
-        return "${summary.number}:${summary.state}:$stageFingerprint:$artifactFingerprint"
-    }
 
     override fun dispose() {
         future?.cancel(true)

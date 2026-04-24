@@ -3,6 +3,10 @@
 .kotlin/
 build/
 out/
+/htmlReport/
+/.idea/
+.idea/
+.run/
 .env
 .idea/
 build/
