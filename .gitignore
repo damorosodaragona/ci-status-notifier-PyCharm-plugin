@@ -7,3 +7,9 @@ out/
 /.idea/
 .idea/
 .run/
+.env
+.idea/
+build/
+.idea/
+.run/
+.htmlReport/
