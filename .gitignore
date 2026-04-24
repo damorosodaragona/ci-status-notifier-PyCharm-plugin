@@ -5,3 +5,5 @@ build/
 out/
 /htmlReport/
 /.idea/
+.idea/
+.run/
