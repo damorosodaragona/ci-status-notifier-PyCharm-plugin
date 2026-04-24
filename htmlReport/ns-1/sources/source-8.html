@@ -1,0 +1,438 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <meta http-equiv="Content-Type" content="text/html;charset=UTF-8"> 
+  <title>Coverage Report > CiStatusStartupActivity</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">com.skillab.projector.cistatus</a>
+</div>
+
+<h1>Coverage Summary for Class: CiStatusStartupActivity (com.skillab.projector.cistatus)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CiStatusStartupActivity</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;package com.skillab.projector.cistatus
+&nbsp;
+&nbsp;import com.intellij.openapi.Disposable
+&nbsp;import com.intellij.openapi.application.ApplicationManager
+&nbsp;import com.intellij.openapi.diagnostic.Logger
+&nbsp;import com.intellij.openapi.project.Project
+&nbsp;import com.intellij.openapi.startup.ProjectActivity
+&nbsp;import com.intellij.openapi.util.Disposer
+&nbsp;import com.intellij.util.concurrency.AppExecutorUtil
+&nbsp;import java.util.concurrent.ScheduledFuture
+&nbsp;import java.util.concurrent.TimeUnit
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean
+&nbsp;
+<b class="nc">&nbsp;class CiStatusStartupActivity : ProjectActivity {</b>
+&nbsp;    override suspend fun execute(project: Project) {
+<b class="nc">&nbsp;        val watcher = CiStatusWatcher(project)</b>
+<b class="nc">&nbsp;        Disposer.register(project, watcher)</b>
+<b class="nc">&nbsp;        watcher.start()</b>
+&nbsp;    }
+&nbsp;}
+&nbsp;
+&nbsp;private class CiStatusWatcher(private val project: Project) : Disposable {
+&nbsp;    private val log = Logger.getInstance(CiStatusWatcher::class.java)
+&nbsp;    private val settings = CiStatusSettings.getInstance(project)
+&nbsp;    private val shaReader = GitShaReader(project)
+&nbsp;    private val github = GitHubStatusClient()
+&nbsp;    private val jenkins = JenkinsStatusClient(project)
+&nbsp;    private val notifier = CiStatusNotifier(project)
+&nbsp;    private val running = AtomicBoolean(false)
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var future: ScheduledFuture&lt;*&gt;? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var lastFingerprint: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var lastOutgoingCommitCount: Int? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var lastObservedSha: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var lastObservedBranch: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var lastDetectedPushedSha: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var lastSeenBuildKey: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var lastSeenBuildState: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var lastRunningNotificationKey: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var trackedRunningBuildKey: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var observedJenkinsJobUrl: String? = null
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var nextLightPollAtMillis: Long = 0L
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var nextHeavyPollAtMillis: Long = 0L
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var heavyPollingActive: Boolean = false
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var boostedPollingUntilMillis: Long = 0L
+&nbsp;
+&nbsp;    @Volatile
+&nbsp;    private var authenticationPaused: Boolean = false
+&nbsp;
+&nbsp;    companion object {
+&nbsp;        private const val BASE_TICK_SECONDS = 5L
+&nbsp;        private const val INITIAL_DELAY_SECONDS = 3L
+&nbsp;        private const val HEAVY_POLL_SECONDS = 10L
+&nbsp;        private const val POST_GIT_ACTIVITY_POLL_SECONDS = 180L
+&nbsp;    }
+&nbsp;
+&nbsp;    fun start() {
+&nbsp;        project.messageBus.connect(this).subscribe(CiStatusJenkinsBuildListener.TOPIC, object : CiStatusJenkinsBuildListener {
+&nbsp;            override fun buildObserved(jobUrl: String, summary: JenkinsBuildSummary) {
+&nbsp;                observedJenkinsJobUrl = jobUrl.trimEnd(&#39;/&#39;)
+&nbsp;                handleJenkinsSummary(summary, &quot;tool-window-observed&quot;)
+&nbsp;            }
+&nbsp;        })
+&nbsp;        project.messageBus.connect(this).subscribe(CiStatusRefreshListener.TOPIC, object : CiStatusRefreshListener {
+&nbsp;            override fun refreshRequested(reason: String) {
+&nbsp;                authenticationPaused = false
+&nbsp;                nextLightPollAtMillis = 0L
+&nbsp;                nextHeavyPollAtMillis = 0L
+&nbsp;            }
+&nbsp;        })
+&nbsp;
+&nbsp;        future = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(
+&nbsp;            { pollSafely() },
+&nbsp;            INITIAL_DELAY_SECONDS,
+&nbsp;            BASE_TICK_SECONDS,
+&nbsp;            TimeUnit.SECONDS,
+&nbsp;        )
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun pollSafely() {
+&nbsp;        if (!running.compareAndSet(false, true)) {
+&nbsp;            return
+&nbsp;        }
+&nbsp;
+&nbsp;        try {
+&nbsp;            poll()
+&nbsp;        } catch (error: JenkinsAuthenticationExpiredException) {
+&nbsp;            authenticationPaused = true
+&nbsp;            heavyPollingActive = false
+&nbsp;            trackedRunningBuildKey = null
+&nbsp;            notifier.notifyJenkinsAuthenticationExpired {
+&nbsp;                ApplicationManager.getApplication().executeOnPooledThread {
+&nbsp;                    val recovered = KeycloakSessionService.getInstance(project).ensureLoggedIn(settings.jenkinsBaseUrl)
+&nbsp;                    if (recovered) {
+&nbsp;                        authenticationPaused = false
+&nbsp;                        nextLightPollAtMillis = 0L
+&nbsp;                        requestToolWindowRefresh(&quot;keycloak-login&quot;)
+&nbsp;                    }
+&nbsp;                }
+&nbsp;            }
+&nbsp;        } catch (error: Exception) {
+&nbsp;            log.warn(&quot;Could not poll CI statuses&quot;, error)
+&nbsp;        } finally {
+&nbsp;            running.set(false)
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun poll() {
+&nbsp;        if (project.isDisposed || !settings.enabled || authenticationPaused) {
+&nbsp;            return
+&nbsp;        }
+&nbsp;
+&nbsp;        if (settings.provider == &quot;jenkins&quot;) {
+&nbsp;            pollJenkinsLoop()
+&nbsp;        } else {
+&nbsp;            pollGitHub()
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun pollGitHub() {
+&nbsp;        val repository = settings.repository.ifBlank { shaReader.originRepository().orEmpty() }
+&nbsp;        if (!repository.matches(Regex(&quot;[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+&quot;))) {
+&nbsp;            return
+&nbsp;        }
+&nbsp;
+&nbsp;        val sha = shaReader.currentSha() ?: return
+&nbsp;        val summary = github.fetch(repository, sha, settings.getToken())
+&nbsp;        if (!CiStatusBuildLogic.shouldNotifyGitHub(summary.state, settings.notifyPending, settings.notifySuccess, settings.notifyFailure)) {
+&nbsp;            lastFingerprint = CiStatusBuildLogic.fingerprint(summary)
+&nbsp;            return
+&nbsp;        }
+&nbsp;
+&nbsp;        val fingerprint = CiStatusBuildLogic.fingerprint(summary)
+&nbsp;        if (fingerprint != lastFingerprint) {
+&nbsp;            lastFingerprint = fingerprint
+&nbsp;            ApplicationManager.getApplication().invokeLater {
+&nbsp;                if (!project.isDisposed) {
+&nbsp;                    notifier.notify(summary)
+&nbsp;                }
+&nbsp;            }
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun pollJenkinsLoop() {
+&nbsp;        if (settings.jenkinsBaseUrl.isBlank()) {
+&nbsp;            return
+&nbsp;        }
+&nbsp;
+&nbsp;        val now = System.currentTimeMillis()
+&nbsp;        val headChanged = detectHeadChange()
+&nbsp;        val pushDetected = detectPush()
+&nbsp;        if (headChanged || pushDetected) {
+&nbsp;            if (headChanged) {
+&nbsp;                observedJenkinsJobUrl = null
+&nbsp;            }
+&nbsp;            startBoostedPolling(now)
+&nbsp;            fetchAndHandleJenkinsSummary(if (pushDetected) &quot;push-detected&quot; else &quot;head-changed&quot;)
+&nbsp;            nextHeavyPollAtMillis = now + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
+&nbsp;            return
+&nbsp;        }
+&nbsp;
+&nbsp;        if (heavyPollingActive || isBoostedPolling(now)) {
+&nbsp;            if (now &gt;= nextHeavyPollAtMillis) {
+&nbsp;                fetchAndHandleJenkinsSummary(if (heavyPollingActive) &quot;heavy-poll&quot; else &quot;post-git-activity-poll&quot;)
+&nbsp;                nextHeavyPollAtMillis = now + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
+&nbsp;            }
+&nbsp;            return
+&nbsp;        }
+&nbsp;
+&nbsp;        if (nextLightPollAtMillis == 0L || now &gt;= nextLightPollAtMillis) {
+&nbsp;            fetchAndHandleJenkinsSummary(&quot;light-poll&quot;)
+&nbsp;            nextLightPollAtMillis = now + lightPollMillis()
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun detectHeadChange(): Boolean {
+&nbsp;        val currentSha = shaReader.currentSha() ?: return false
+&nbsp;        val currentBranch = shaReader.currentBranch()
+&nbsp;        val previousSha = lastObservedSha
+&nbsp;        val previousBranch = lastObservedBranch
+&nbsp;        lastObservedSha = currentSha
+&nbsp;        lastObservedBranch = currentBranch
+&nbsp;        return previousSha != null &amp;&amp; (currentSha != previousSha || currentBranch != previousBranch)
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun detectPush(): Boolean {
+&nbsp;        val currentSha = shaReader.currentSha() ?: return false
+&nbsp;        val current = shaReader.outgoingCommitCount() ?: return false
+&nbsp;        val previous = lastOutgoingCommitCount
+&nbsp;        lastOutgoingCommitCount = current
+&nbsp;        if (previous != null &amp;&amp; previous &gt; 0 &amp;&amp; current == 0) {
+&nbsp;            lastDetectedPushedSha = currentSha
+&nbsp;            return true
+&nbsp;        }
+&nbsp;
+&nbsp;        if (current &gt; 0 &amp;&amp; lastDetectedPushedSha != currentSha &amp;&amp; shaReader.originBranchSha() == currentSha) {
+&nbsp;            lastDetectedPushedSha = currentSha
+&nbsp;            return true
+&nbsp;        }
+&nbsp;
+&nbsp;        return false
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun fetchAndHandleJenkinsSummary(reason: String) {
+&nbsp;        val monitoredJobUrl = observedJenkinsJobUrl
+&nbsp;        val summary = if (!monitoredJobUrl.isNullOrBlank()) {
+&nbsp;            JenkinsStatusClient.withRequestMode(JenkinsRequestMode.BACKGROUND) {
+&nbsp;                jenkins.fetchLatestBuildForJobUrl(monitoredJobUrl, settings.jenkinsUsername, settings.getJenkinsToken())
+&nbsp;            }
+&nbsp;        } else {
+&nbsp;            JenkinsStatusClient.withRequestMode(JenkinsRequestMode.BACKGROUND) {
+&nbsp;                jenkins.fetchLatestBuild(
+&nbsp;                    settings.jenkinsBaseUrl,
+&nbsp;                    settings.jenkinsJobPath,
+&nbsp;                    settings.jenkinsUsername,
+&nbsp;                    settings.getJenkinsToken(),
+&nbsp;                    shaReader.currentBranch(),
+&nbsp;                )
+&nbsp;            }
+&nbsp;        }
+&nbsp;        handleJenkinsSummary(summary, reason)
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun handleJenkinsSummary(summary: JenkinsBuildSummary, reason: String) {
+&nbsp;        val buildKey = CiStatusBuildLogic.buildKey(summary)
+&nbsp;        val state = summary.state
+&nbsp;        val fingerprint = CiStatusBuildLogic.fingerprint(summary)
+&nbsp;        val decision = CiStatusBuildLogic.evaluateJenkinsTransition(
+&nbsp;            currentBuildKey = buildKey,
+&nbsp;            currentState = state,
+&nbsp;            previousBuildKey = lastSeenBuildKey,
+&nbsp;            previousState = lastSeenBuildState,
+&nbsp;            trackedRunningBuildKey = trackedRunningBuildKey,
+&nbsp;            lastRunningNotificationKey = lastRunningNotificationKey,
+&nbsp;            currentFingerprint = fingerprint,
+&nbsp;            lastFingerprint = lastFingerprint,
+&nbsp;            reason = reason,
+&nbsp;            notifyPending = settings.notifyPending,
+&nbsp;            notifySuccess = settings.notifySuccess,
+&nbsp;            notifyFailure = settings.notifyFailure,
+&nbsp;        )
+&nbsp;
+&nbsp;        if (decision.requestRefresh) {
+&nbsp;            requestToolWindowRefresh(reason)
+&nbsp;        }
+&nbsp;
+&nbsp;        if (state == &quot;RUNNING&quot;) {
+&nbsp;            heavyPollingActive = true
+&nbsp;            trackedRunningBuildKey = buildKey
+&nbsp;            nextHeavyPollAtMillis = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(HEAVY_POLL_SECONDS)
+&nbsp;            if (decision.notifyRunningStarted) {
+&nbsp;                lastRunningNotificationKey = buildKey
+&nbsp;                ApplicationManager.getApplication().invokeLater {
+&nbsp;                    if (!project.isDisposed) {
+&nbsp;                        notifier.notify(summary)
+&nbsp;                    }
+&nbsp;                }
+&nbsp;            }
+&nbsp;        } else if (decision.trackedRunningFinished) {
+&nbsp;            heavyPollingActive = false
+&nbsp;            trackedRunningBuildKey = null
+&nbsp;            nextLightPollAtMillis = System.currentTimeMillis() + lightPollMillis()
+&nbsp;            if (decision.notifyRunningFinished) {
+&nbsp;                lastFingerprint = fingerprint
+&nbsp;                ApplicationManager.getApplication().invokeLater {
+&nbsp;                    if (!project.isDisposed) {
+&nbsp;                        notifier.notify(summary)
+&nbsp;                    }
+&nbsp;                }
+&nbsp;            }
+&nbsp;        }
+&nbsp;
+&nbsp;        if (!heavyPollingActive &amp;&amp; state != &quot;RUNNING&quot;) {
+&nbsp;            trackedRunningBuildKey = null
+&nbsp;        }
+&nbsp;
+&nbsp;        lastSeenBuildKey = buildKey
+&nbsp;        lastSeenBuildState = state
+&nbsp;        if (decision.storeFingerprintWhenUnchanged) {
+&nbsp;            lastFingerprint = fingerprint
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun startBoostedPolling(now: Long) {
+&nbsp;        boostedPollingUntilMillis = now + TimeUnit.SECONDS.toMillis(POST_GIT_ACTIVITY_POLL_SECONDS)
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun isBoostedPolling(now: Long): Boolean = now &lt; boostedPollingUntilMillis
+&nbsp;
+&nbsp;    private fun requestToolWindowRefresh(reason: String) {
+&nbsp;        ApplicationManager.getApplication().invokeLater {
+&nbsp;            if (!project.isDisposed) {
+&nbsp;                project.messageBus.syncPublisher(CiStatusRefreshListener.TOPIC).refreshRequested(reason)
+&nbsp;            }
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun lightPollMillis(): Long = TimeUnit.SECONDS.toMillis(settings.pollIntervalSeconds.toLong())
+&nbsp;
+&nbsp;
+&nbsp;    override fun dispose() {
+&nbsp;        future?.cancel(true)
+&nbsp;        future = null
+&nbsp;    }
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2026-04-24 15:51</div>
+</div>
+</body>
+</html>

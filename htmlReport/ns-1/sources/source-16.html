@@ -1,0 +1,808 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <meta http-equiv="Content-Type" content="text/html;charset=UTF-8"> 
+  <title>Coverage Report > JenkinsJobNode</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">com.skillab.projector.cistatus</a>
+</div>
+
+<h1>Coverage Summary for Class: JenkinsJobNode (com.skillab.projector.cistatus)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JenkinsJobNode</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (10/10)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;package com.skillab.projector.cistatus
+&nbsp;
+&nbsp;import com.intellij.openapi.project.Project
+&nbsp;import com.google.gson.JsonElement
+&nbsp;import com.google.gson.JsonObject
+&nbsp;import com.google.gson.JsonParser
+&nbsp;import java.io.IOException
+&nbsp;import java.net.CookieManager
+&nbsp;import java.net.CookiePolicy
+&nbsp;import java.net.URI
+&nbsp;import java.net.URLEncoder
+&nbsp;import java.net.http.HttpClient
+&nbsp;import java.net.http.HttpRequest
+&nbsp;import java.net.http.HttpResponse
+&nbsp;import java.nio.charset.StandardCharsets
+&nbsp;import java.nio.file.Files
+&nbsp;import java.nio.file.Path
+&nbsp;import java.time.Duration
+&nbsp;import java.util.Base64
+&nbsp;import java.util.Comparator
+&nbsp;
+&nbsp;data class JenkinsBuildSummary(
+&nbsp;    val number: Int,
+&nbsp;    val displayName: String,
+&nbsp;    val fullDisplayName: String,
+&nbsp;    val result: String?,
+&nbsp;    val building: Boolean,
+&nbsp;    val url: String,
+&nbsp;    val timestampMillis: Long,
+&nbsp;    val durationMillis: Long,
+&nbsp;    val stages: List&lt;JenkinsStage&gt;,
+&nbsp;    val artifacts: List&lt;JenkinsArtifact&gt;,
+&nbsp;) {
+&nbsp;    val state: String
+&nbsp;        get() = when {
+&nbsp;            building -&gt; &quot;RUNNING&quot;
+&nbsp;            result.isNullOrBlank() -&gt; &quot;UNKNOWN&quot;
+&nbsp;            else -&gt; result
+&nbsp;        }
+&nbsp;}
+&nbsp;
+&nbsp;data class JenkinsStage(
+&nbsp;    val id: String,
+&nbsp;    val name: String,
+&nbsp;    val status: String,
+&nbsp;    val durationMillis: Long,
+&nbsp;    val url: String?,
+&nbsp;)
+&nbsp;
+&nbsp;data class JenkinsArtifact(
+&nbsp;    val name: String,
+&nbsp;    val path: String,
+&nbsp;    val url: String,
+&nbsp;    val size: Long?,
+&nbsp;) {
+&nbsp;    val isHtml: Boolean
+&nbsp;        get() = name.endsWith(&quot;.html&quot;, ignoreCase = true) || path.endsWith(&quot;.html&quot;, ignoreCase = true)
+&nbsp;}
+&nbsp;
+&nbsp;data class JenkinsJobCandidate(
+&nbsp;    val name: String,
+&nbsp;    val url: String,
+&nbsp;)
+&nbsp;
+<b class="fc">&nbsp;data class JenkinsJobNode(</b>
+<b class="fc">&nbsp;    val name: String,</b>
+<b class="fc">&nbsp;    val url: String,</b>
+<b class="fc">&nbsp;    val color: String,</b>
+<b class="fc">&nbsp;    val buildable: Boolean,</b>
+<b class="fc">&nbsp;    val lastBuildNumber: Int?,</b>
+<b class="fc">&nbsp;    val lastBuildResult: String?,</b>
+<b class="fc">&nbsp;    val lastBuildBuilding: Boolean,</b>
+<b class="fc">&nbsp;    val children: List&lt;JenkinsJobNode&gt;,</b>
+&nbsp;) {
+&nbsp;    val isBuildJob: Boolean
+<b class="pc">&nbsp;        get() = lastBuildNumber != null || (buildable &amp;&amp; children.isEmpty())</b>
+&nbsp;}
+&nbsp;
+&nbsp;data class JenkinsJobTree(
+&nbsp;    val root: JenkinsJobNode,
+&nbsp;    val autoSelected: JenkinsJobNode?,
+&nbsp;)
+&nbsp;
+&nbsp;data class JenkinsDiagnosticStep(
+&nbsp;    val name: String,
+&nbsp;    val url: String,
+&nbsp;    val statusCode: Int?,
+&nbsp;    val location: String?,
+&nbsp;    val wwwAuthenticate: String?,
+&nbsp;    val contentType: String?,
+&nbsp;    val authHeaderSent: Boolean,
+&nbsp;    val bodyPreview: String,
+&nbsp;    val error: String?,
+&nbsp;) {
+&nbsp;    val ok: Boolean
+&nbsp;        get() = error == null &amp;&amp; statusCode in 200..299 &amp;&amp; contentType?.contains(&quot;json&quot;, ignoreCase = true) == true
+&nbsp;}
+&nbsp;
+&nbsp;enum class JenkinsRequestMode { MANUAL, BACKGROUND }
+&nbsp;
+&nbsp;class JenkinsAuthenticationExpiredException(val jenkinsUrl: String) : RuntimeException(&quot;Jenkins authentication expired. Login required.&quot;)
+&nbsp;
+&nbsp;class JenkinsStatusClient(private val project: Project? = null) {
+&nbsp;    companion object {
+&nbsp;        private val requestMode = ThreadLocal.withInitial { JenkinsRequestMode.BACKGROUND }
+&nbsp;
+&nbsp;        fun &lt;T&gt; withRequestMode(mode: JenkinsRequestMode, action: () -&gt; T): T {
+&nbsp;            val previous = requestMode.get()
+&nbsp;            requestMode.set(mode)
+&nbsp;            return try {
+&nbsp;                action()
+&nbsp;            } finally {
+&nbsp;                requestMode.set(previous)
+&nbsp;            }
+&nbsp;        }
+&nbsp;
+&nbsp;        private fun currentRequestMode(): JenkinsRequestMode = requestMode.get()
+&nbsp;    }
+&nbsp;
+&nbsp;    private val maxArtifactCount = 500
+&nbsp;    private val maxArtifactBytes = 100L * 1024L * 1024L
+&nbsp;    private val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
+&nbsp;    private val httpClient = HttpClient.newBuilder()
+&nbsp;        .connectTimeout(Duration.ofSeconds(10))
+&nbsp;        .cookieHandler(cookieManager)
+&nbsp;        .followRedirects(HttpClient.Redirect.NEVER)
+&nbsp;        .version(HttpClient.Version.HTTP_1_1)
+&nbsp;        .build()
+&nbsp;
+&nbsp;    fun fetchLatestBuild(
+&nbsp;        baseUrl: String,
+&nbsp;        jobPath: String,
+&nbsp;        username: String,
+&nbsp;        token: String,
+&nbsp;        preferredBranch: String? = null,
+&nbsp;    ): JenkinsBuildSummary {
+&nbsp;        val normalizedBaseUrl = baseUrl.trim().trimEnd(&#39;/&#39;)
+&nbsp;        val configuredJobUrl = buildJenkinsUrl(normalizedBaseUrl, jobPath)
+&nbsp;        val jobUrl = resolveBuildableJobUrl(configuredJobUrl, username, token, preferredBranch)
+&nbsp;        return fetchLatestBuildForJobUrl(jobUrl, username, token)
+&nbsp;    }
+&nbsp;
+&nbsp;    fun fetchLatestBuildForJobUrl(jobUrl: String, username: String, token: String): JenkinsBuildSummary {
+&nbsp;        val normalizedJobUrl = jobUrl.trimEnd(&#39;/&#39;)
+&nbsp;        val buildJson = getJson(
+&nbsp;            &quot;$normalizedJobUrl/lastBuild/api/json?tree=number,displayName,fullDisplayName,result,building,url,timestamp,duration,artifacts[fileName,relativePath]&quot;,
+&nbsp;            username,
+&nbsp;            token,
+&nbsp;        )
+&nbsp;
+&nbsp;        val buildUrl = buildJson.string(&quot;url&quot;).ifBlank {
+&nbsp;            &quot;$normalizedJobUrl/${buildJson.int(&quot;number&quot;)}/&quot;
+&nbsp;        }.trimEnd(&#39;/&#39;) + &quot;/&quot;
+&nbsp;        val stages = fetchStages(buildUrl, username, token)
+&nbsp;        val artifacts = fetchArtifacts(buildUrl, buildJson, username, token)
+&nbsp;
+&nbsp;        return JenkinsBuildSummary(
+&nbsp;            number = buildJson.int(&quot;number&quot;),
+&nbsp;            displayName = buildJson.string(&quot;displayName&quot;).ifBlank { &quot;#${buildJson.int(&quot;number&quot;)}&quot; },
+&nbsp;            fullDisplayName = buildJson.string(&quot;fullDisplayName&quot;),
+&nbsp;            result = buildJson.nullableString(&quot;result&quot;),
+&nbsp;            building = buildJson.boolean(&quot;building&quot;),
+&nbsp;            url = buildUrl,
+&nbsp;            timestampMillis = buildJson.long(&quot;timestamp&quot;),
+&nbsp;            durationMillis = buildJson.long(&quot;duration&quot;),
+&nbsp;            stages = stages,
+&nbsp;            artifacts = artifacts,
+&nbsp;        )
+&nbsp;    }
+&nbsp;
+&nbsp;    fun downloadArtifacts(
+&nbsp;        summary: JenkinsBuildSummary,
+&nbsp;        username: String,
+&nbsp;        token: String,
+&nbsp;        cacheRoot: Path,
+&nbsp;    ): Path {
+&nbsp;        if (summary.artifacts.size &gt; maxArtifactCount) {
+&nbsp;            throw IllegalStateException(&quot;Build has ${summary.artifacts.size} artifacts, which exceeds the limit of $maxArtifactCount.&quot;)
+&nbsp;        }
+&nbsp;
+&nbsp;        val buildCache = cacheRoot
+&nbsp;            .resolve(stableId(summary.url))
+&nbsp;            .resolve(summary.number.toString())
+&nbsp;            .normalize()
+&nbsp;        if (Files.exists(buildCache)) {
+&nbsp;            Files.walk(buildCache)
+&nbsp;                .sorted(Comparator.reverseOrder())
+&nbsp;                .forEach(Files::deleteIfExists)
+&nbsp;        }
+&nbsp;        Files.createDirectories(buildCache)
+&nbsp;
+&nbsp;        var totalBytes = 0L
+&nbsp;        summary.artifacts.forEach { artifact -&gt;
+&nbsp;            val target = buildCache.resolve(artifact.path).normalize()
+&nbsp;            if (!target.startsWith(buildCache)) {
+&nbsp;                throw IllegalStateException(&quot;Artifact path escapes cache directory: ${artifact.path}&quot;)
+&nbsp;            }
+&nbsp;            artifact.size?.let {
+&nbsp;                totalBytes += it
+&nbsp;                if (totalBytes &gt; maxArtifactBytes) {
+&nbsp;                    throw IllegalStateException(&quot;Build artifacts exceed the ${maxArtifactBytes / 1024 / 1024} MB preview limit.&quot;)
+&nbsp;                }
+&nbsp;            }
+&nbsp;
+&nbsp;            Files.createDirectories(target.parent)
+&nbsp;            val response = sendWithRetry(artifact.url, username, token, HttpResponse.BodyHandlers.ofFile(target))
+&nbsp;            if (response.statusCode() !in 200..299) {
+&nbsp;                throw JenkinsHttpException(response.statusCode(), artifact.url, response.headers().firstValue(&quot;Location&quot;).orElse(null))
+&nbsp;            }
+&nbsp;            if (artifact.size == null) {
+&nbsp;                totalBytes += Files.size(target)
+&nbsp;                if (totalBytes &gt; maxArtifactBytes) {
+&nbsp;                    throw IllegalStateException(&quot;Build artifacts exceed the ${maxArtifactBytes / 1024 / 1024} MB preview limit.&quot;)
+&nbsp;                }
+&nbsp;            }
+&nbsp;        }
+&nbsp;
+&nbsp;        return buildCache
+&nbsp;    }
+&nbsp;
+&nbsp;    fun fetchJobTree(
+&nbsp;        baseUrl: String,
+&nbsp;        jobPath: String,
+&nbsp;        username: String,
+&nbsp;        token: String,
+&nbsp;        preferredBranch: String?,
+&nbsp;    ): JenkinsJobTree {
+&nbsp;        val normalizedBaseUrl = baseUrl.trim().trimEnd(&#39;/&#39;)
+&nbsp;        val rootUrl = buildJenkinsUrl(normalizedBaseUrl, jobPath)
+&nbsp;        val root = fetchJobNode(rootUrl, username, token, 0, maxDepth = 5, visited = mutableSetOf())
+&nbsp;        return JenkinsJobTree(root, findAutoSelected(root, preferredBranch))
+&nbsp;    }
+&nbsp;
+&nbsp;    fun diagnose(
+&nbsp;        baseUrl: String,
+&nbsp;        jobPath: String,
+&nbsp;        username: String,
+&nbsp;        token: String,
+&nbsp;        preferredBranch: String?,
+&nbsp;    ): List&lt;JenkinsDiagnosticStep&gt; {
+&nbsp;        val normalizedBaseUrl = baseUrl.trim().trimEnd(&#39;/&#39;)
+&nbsp;        val rootUrl = buildJenkinsUrl(normalizedBaseUrl, &quot;&quot;)
+&nbsp;        val configuredJobUrl = buildJenkinsUrl(normalizedBaseUrl, jobPath)
+&nbsp;        val steps = mutableListOf&lt;JenkinsDiagnosticStep&gt;()
+&nbsp;        steps += diagnosticRequest(&quot;whoAmI&quot;, &quot;$rootUrl/whoAmI/api/json&quot;, username, token)
+&nbsp;        steps += diagnosticRequest(&quot;Jenkins root API&quot;, &quot;$rootUrl/api/json&quot;, username, token)
+&nbsp;        steps += diagnosticRequest(&quot;Configured job root&quot;, &quot;$configuredJobUrl/api/json&quot;, username, token)
+&nbsp;        val resolvedJobUrl = runCatching {
+&nbsp;            resolveBuildableJobUrl(configuredJobUrl, username, token, preferredBranch)
+&nbsp;        }.getOrNull()
+&nbsp;        if (!resolvedJobUrl.isNullOrBlank()) {
+&nbsp;            steps += diagnosticRequest(&quot;Resolved job latest build&quot;, &quot;$resolvedJobUrl/lastBuild/api/json&quot;, username, token)
+&nbsp;        }
+&nbsp;        return steps
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun resolveBuildableJobUrl(
+&nbsp;        configuredJobUrl: String,
+&nbsp;        username: String,
+&nbsp;        token: String,
+&nbsp;        preferredBranch: String?,
+&nbsp;    ): String {
+&nbsp;        val jobJson = getJson(
+&nbsp;            &quot;$configuredJobUrl/api/json?tree=buildable,lastBuild[number],jobs[name,url,color]&quot;,
+&nbsp;            username,
+&nbsp;            token,
+&nbsp;        )
+&nbsp;        if (jobJson.obj(&quot;lastBuild&quot;) != null || jobJson.boolean(&quot;buildable&quot;)) {
+&nbsp;            return configuredJobUrl
+&nbsp;        }
+&nbsp;
+&nbsp;        val jobs = jobJson.array(&quot;jobs&quot;).mapNotNull { item -&gt;
+&nbsp;            val job = item.asJsonObjectOrNull() ?: return@mapNotNull null
+&nbsp;            JenkinsJobCandidate(job.string(&quot;name&quot;), job.string(&quot;url&quot;).trimEnd(&#39;/&#39;))
+&nbsp;        }
+&nbsp;        if (jobs.isEmpty()) {
+&nbsp;            return configuredJobUrl
+&nbsp;        }
+&nbsp;
+&nbsp;        val preferred = preferredBranch?.let { branch -&gt;
+&nbsp;            jobs.firstOrNull { it.name.equals(branch, ignoreCase = true) }
+&nbsp;                ?: jobs.firstOrNull { it.name.equals(branch.replace(&quot;/&quot;, &quot;%2F&quot;), ignoreCase = true) }
+&nbsp;                ?: jobs.firstOrNull { it.name.equals(branch.replace(&quot;/&quot;, &quot;%252F&quot;), ignoreCase = true) }
+&nbsp;        }
+&nbsp;        if (preferred != null) {
+&nbsp;            return preferred.url
+&nbsp;        }
+&nbsp;
+&nbsp;        val recursiveRoot = fetchJobNode(configuredJobUrl, username, token, 0, maxDepth = 5, visited = mutableSetOf())
+&nbsp;        findAutoSelected(recursiveRoot, preferredBranch)?.let {
+&nbsp;            return it.url.trimEnd(&#39;/&#39;)
+&nbsp;        }
+&nbsp;
+&nbsp;        return (jobs.firstOrNull { it.name.equals(&quot;main&quot;, ignoreCase = true) } ?: jobs.first()).url
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun fetchJobNode(
+&nbsp;        jobUrl: String,
+&nbsp;        username: String,
+&nbsp;        token: String,
+&nbsp;        depth: Int,
+&nbsp;        maxDepth: Int,
+&nbsp;        visited: MutableSet&lt;String&gt;,
+&nbsp;    ): JenkinsJobNode {
+&nbsp;        val normalizedJobUrl = jobUrl.trimEnd(&#39;/&#39;)
+&nbsp;        if (!visited.add(normalizedJobUrl)) {
+&nbsp;            return JenkinsJobNode(normalizedJobUrl.substringAfterLast(&#39;/&#39;), normalizedJobUrl, &quot;&quot;, false, null, null, false, emptyList())
+&nbsp;        }
+&nbsp;
+&nbsp;        val jobJson = getJson(
+&nbsp;            &quot;$normalizedJobUrl/api/json?tree=name,displayName,url,color,buildable,lastBuild[number,result,building],jobs[name,displayName,url,color]&quot;,
+&nbsp;            username,
+&nbsp;            token,
+&nbsp;        )
+&nbsp;        val childSeeds = if (depth &lt; maxDepth) {
+&nbsp;            jobJson.array(&quot;jobs&quot;).mapNotNull { it.asJsonObjectOrNull() }
+&nbsp;        } else {
+&nbsp;            emptyList()
+&nbsp;        }
+&nbsp;        val children = childSeeds.mapNotNull { child -&gt;
+&nbsp;            val childUrl = child.string(&quot;url&quot;).ifBlank { return@mapNotNull null }
+&nbsp;            runCatching { fetchJobNode(childUrl, username, token, depth + 1, maxDepth, visited) }
+&nbsp;                .getOrNull()
+&nbsp;        }
+&nbsp;        val lastBuild = jobJson.obj(&quot;lastBuild&quot;)
+&nbsp;
+&nbsp;        return JenkinsJobNode(
+&nbsp;            name = jobJson.string(&quot;displayName&quot;).ifBlank { jobJson.string(&quot;name&quot;).ifBlank { normalizedJobUrl.substringAfterLast(&#39;/&#39;) } },
+&nbsp;            url = jobJson.string(&quot;url&quot;).ifBlank { normalizedJobUrl },
+&nbsp;            color = jobJson.string(&quot;color&quot;),
+&nbsp;            buildable = jobJson.boolean(&quot;buildable&quot;),
+&nbsp;            lastBuildNumber = lastBuild?.nullableInt(&quot;number&quot;),
+&nbsp;            lastBuildResult = lastBuild?.nullableString(&quot;result&quot;),
+&nbsp;            lastBuildBuilding = lastBuild?.boolean(&quot;building&quot;) ?: jobJson.string(&quot;color&quot;).endsWith(&quot;_anime&quot;),
+&nbsp;            children = children,
+&nbsp;        )
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun findAutoSelected(root: JenkinsJobNode, preferredBranch: String?): JenkinsJobNode? {
+&nbsp;        val buildJobs = flatten(root).filter { it.isBuildJob }
+&nbsp;        if (buildJobs.isEmpty()) {
+&nbsp;            return null
+&nbsp;        }
+&nbsp;
+&nbsp;        val branchNames = preferredBranch?.let { branch -&gt;
+&nbsp;            listOf(
+&nbsp;                branch,
+&nbsp;                branch.replace(&quot;/&quot;, &quot;%2F&quot;),
+&nbsp;                branch.replace(&quot;/&quot;, &quot;%252F&quot;),
+&nbsp;                branch.substringAfterLast(&#39;/&#39;),
+&nbsp;            ).distinct()
+&nbsp;        }.orEmpty()
+&nbsp;
+&nbsp;        return branchNames.firstNotNullOfOrNull { branch -&gt;
+&nbsp;            buildJobs.firstOrNull { it.name.equals(branch, ignoreCase = true) }
+&nbsp;                ?: buildJobs.firstOrNull { it.url.trimEnd(&#39;/&#39;).substringAfterLast(&#39;/&#39;).equals(branch, ignoreCase = true) }
+&nbsp;        }
+&nbsp;            ?: buildJobs.firstOrNull { it.name.equals(&quot;main&quot;, ignoreCase = true) }
+&nbsp;            ?: buildJobs.first()
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun flatten(node: JenkinsJobNode): List&lt;JenkinsJobNode&gt; =
+&nbsp;        listOf(node) + node.children.flatMap(::flatten)
+&nbsp;
+&nbsp;    private fun fetchStages(buildUrl: String, username: String, token: String): List&lt;JenkinsStage&gt; {
+&nbsp;        val workflow = runCatching { getJson(&quot;${buildUrl}wfapi/describe&quot;, username, token) }.getOrNull() ?: return emptyList()
+&nbsp;        return workflow.array(&quot;stages&quot;).mapNotNull { item -&gt;
+&nbsp;            val stage = item.asJsonObjectOrNull() ?: return@mapNotNull null
+&nbsp;            val href = stage.obj(&quot;_links&quot;)?.obj(&quot;self&quot;)?.string(&quot;href&quot;)
+&nbsp;            JenkinsStage(
+&nbsp;                id = stage.string(&quot;id&quot;),
+&nbsp;                name = stage.string(&quot;name&quot;),
+&nbsp;                status = stage.string(&quot;status&quot;),
+&nbsp;                durationMillis = stage.long(&quot;durationMillis&quot;),
+&nbsp;                url = href?.let { resolveJenkinsUrl(buildUrl, it) },
+&nbsp;            )
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun fetchArtifacts(
+&nbsp;        buildUrl: String,
+&nbsp;        buildJson: JsonObject,
+&nbsp;        username: String,
+&nbsp;        token: String,
+&nbsp;    ): List&lt;JenkinsArtifact&gt; {
+&nbsp;        val workflowArtifacts = runCatching {
+&nbsp;            getArray(&quot;${buildUrl}wfapi/artifacts&quot;, username, token).mapNotNull { item -&gt;
+&nbsp;                val artifact = item.asJsonObjectOrNull() ?: return@mapNotNull null
+&nbsp;                val url = artifact.string(&quot;url&quot;)
+&nbsp;                JenkinsArtifact(
+&nbsp;                    name = artifact.string(&quot;name&quot;),
+&nbsp;                    path = artifact.string(&quot;path&quot;),
+&nbsp;                    url = resolveJenkinsUrl(buildUrl, url),
+&nbsp;                    size = artifact.nullableLong(&quot;size&quot;),
+&nbsp;                )
+&nbsp;            }
+&nbsp;        }.getOrDefault(emptyList())
+&nbsp;
+&nbsp;        if (workflowArtifacts.isNotEmpty()) {
+&nbsp;            return workflowArtifacts
+&nbsp;        }
+&nbsp;
+&nbsp;        return buildJson.array(&quot;artifacts&quot;).mapNotNull { item -&gt;
+&nbsp;            val artifact = item.asJsonObjectOrNull() ?: return@mapNotNull null
+&nbsp;            val relativePath = artifact.string(&quot;relativePath&quot;)
+&nbsp;            JenkinsArtifact(
+&nbsp;                name = artifact.string(&quot;fileName&quot;).ifBlank { relativePath.substringAfterLast(&#39;/&#39;) },
+&nbsp;                path = relativePath,
+&nbsp;                url = &quot;${buildUrl}artifact/${relativePath.split(&#39;/&#39;).joinToString(&quot;/&quot;) { encodePathSegment(it) }}&quot;,
+&nbsp;                size = null,
+&nbsp;            )
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun getJson(url: String, username: String, token: String): JsonObject {
+&nbsp;        val response = sendWithRetry(url, username, token, HttpResponse.BodyHandlers.ofString())
+&nbsp;        if (response.statusCode() !in 200..299) {
+&nbsp;            throw JenkinsHttpException(response.statusCode(), url, response.headers().firstValue(&quot;Location&quot;).orElse(null))
+&nbsp;        }
+&nbsp;        return JsonParser.parseString(response.body()).asJsonObject
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun getArray(url: String, username: String, token: String): List&lt;JsonElement&gt; {
+&nbsp;        val response = sendWithRetry(url, username, token, HttpResponse.BodyHandlers.ofString())
+&nbsp;        if (response.statusCode() !in 200..299) {
+&nbsp;            throw JenkinsHttpException(response.statusCode(), url, response.headers().firstValue(&quot;Location&quot;).orElse(null))
+&nbsp;        }
+&nbsp;        return JsonParser.parseString(response.body()).asJsonArray.toList()
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun &lt;T&gt; sendWithRetry(
+&nbsp;        url: String,
+&nbsp;        username: String,
+&nbsp;        token: String,
+&nbsp;        bodyHandler: HttpResponse.BodyHandler&lt;T&gt;,
+&nbsp;    ): HttpResponse&lt;T&gt; {
+&nbsp;        var lastError: IOException? = null
+&nbsp;        var authRecoveryTried = false
+&nbsp;        repeat(3) { attempt -&gt;
+&nbsp;            try {
+&nbsp;                var response = httpClient.send(request(url, username, token), bodyHandler)
+&nbsp;                if (!authRecoveryTried &amp;&amp; shouldTriggerInteractiveFallback(response, url)) {
+&nbsp;                    authRecoveryTried = true
+&nbsp;                    val recovered = recoverAuthentication(url)
+&nbsp;                    if (recovered) {
+&nbsp;                        response = httpClient.send(request(url, username, token), bodyHandler)
+&nbsp;                        if (response.statusCode() !in setOf(401, 403) &amp;&amp; !isSecurityRedirect(response)) {
+&nbsp;                            return response
+&nbsp;                        }
+&nbsp;                    } else if (currentRequestMode() == JenkinsRequestMode.BACKGROUND) {
+&nbsp;                        throw JenkinsAuthenticationExpiredException(rootUrl(url))
+&nbsp;                    }
+&nbsp;                }
+&nbsp;                if (shouldRetry(response) &amp;&amp; attempt &lt; 2) {
+&nbsp;                    warmSession(url, username, token)
+&nbsp;                    sleepBeforeRetry(attempt)
+&nbsp;                    return@repeat
+&nbsp;                }
+&nbsp;                if (currentRequestMode() == JenkinsRequestMode.BACKGROUND &amp;&amp; response.statusCode() in setOf(401, 403)) {
+&nbsp;                    throw JenkinsAuthenticationExpiredException(rootUrl(url))
+&nbsp;                }
+&nbsp;                return response
+&nbsp;            } catch (error: IOException) {
+&nbsp;                lastError = error
+&nbsp;                if (attempt == 2 || !isTransientNetworkError(error)) {
+&nbsp;                    throw error
+&nbsp;                }
+&nbsp;                sleepBeforeRetry(attempt)
+&nbsp;            }
+&nbsp;        }
+&nbsp;        throw lastError ?: IOException(&quot;Jenkins request failed&quot;)
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun shouldRetry(response: HttpResponse&lt;*&gt;): Boolean {
+&nbsp;        val location = response.headers().firstValue(&quot;Location&quot;).orElse(&quot;&quot;)
+&nbsp;        return response.statusCode() in setOf(401, 403, 502, 503, 504) ||
+&nbsp;            (response.statusCode() in 300..399 &amp;&amp; location.contains(&quot;securityRealm&quot;, ignoreCase = true))
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun shouldTriggerInteractiveFallback(response: HttpResponse&lt;*&gt;, url: String): Boolean {
+&nbsp;        val project = project ?: return false
+&nbsp;        val settings = CiStatusSettings.getInstance(project)
+&nbsp;        if (!settings.experimentalKeycloakInteractiveFallback) return false
+&nbsp;        if (!url.startsWith(settings.jenkinsBaseUrl, ignoreCase = true)) return false
+&nbsp;        return response.statusCode() in setOf(401, 403) || isSecurityRedirect(response)
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun isSecurityRedirect(response: HttpResponse&lt;*&gt;): Boolean {
+&nbsp;        val location = response.headers().firstValue(&quot;Location&quot;).orElse(&quot;&quot;)
+&nbsp;        return response.statusCode() in 300..399 &amp;&amp; (
+&nbsp;            location.contains(&quot;securityRealm&quot;, ignoreCase = true) ||
+&nbsp;                location.contains(&quot;commenceLogin&quot;, ignoreCase = true) ||
+&nbsp;                location.contains(&quot;keycloak&quot;, ignoreCase = true)
+&nbsp;            )
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun recoverAuthentication(url: String): Boolean {
+&nbsp;        val project = project ?: return false
+&nbsp;        val settings = CiStatusSettings.getInstance(project)
+&nbsp;        if (!settings.experimentalKeycloakInteractiveFallback) {
+&nbsp;            CiStatusDebugLog.keycloak(project, &quot;recover-auth skipped: fallback disabled url=$url&quot;)
+&nbsp;            return false
+&nbsp;        }
+&nbsp;        val service = KeycloakSessionService.getInstance(project)
+&nbsp;        val base = rootUrl(url)
+&nbsp;        val mode = currentRequestMode()
+&nbsp;        CiStatusDebugLog.keycloak(project, &quot;recover-auth start mode=$mode base=$base url=$url&quot;)
+&nbsp;        val autoLoginRecovered = service.attemptAutoLoginInBackground(base)
+&nbsp;        CiStatusDebugLog.keycloak(project, &quot;recover-auth auto-login result=$autoLoginRecovered mode=$mode&quot;)
+&nbsp;        if (autoLoginRecovered) {
+&nbsp;            return true
+&nbsp;        }
+&nbsp;        return when (mode) {
+&nbsp;            JenkinsRequestMode.MANUAL -&gt; {
+&nbsp;                CiStatusDebugLog.keycloak(project, &quot;recover-auth opening interactive login for manual request&quot;)
+&nbsp;                service.ensureLoggedIn(base)
+&nbsp;            }
+&nbsp;            JenkinsRequestMode.BACKGROUND -&gt; {
+&nbsp;                CiStatusDebugLog.keycloak(project, &quot;recover-auth background request: interactive login deferred to notification action&quot;)
+&nbsp;                false
+&nbsp;            }
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun isTransientNetworkError(error: IOException): Boolean {
+&nbsp;        val message = error.message.orEmpty()
+&nbsp;        return message.contains(&quot;GOAWAY&quot;, ignoreCase = true) ||
+&nbsp;            message.contains(&quot;stream&quot;, ignoreCase = true) ||
+&nbsp;            message.contains(&quot;closed&quot;, ignoreCase = true) ||
+&nbsp;            message.contains(&quot;reset&quot;, ignoreCase = true)
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun warmSession(url: String, username: String, token: String) {
+&nbsp;        runCatching {
+&nbsp;            val root = rootUrl(url)
+&nbsp;            httpClient.send(request(&quot;$root/whoAmI/api/json&quot;, username, token), HttpResponse.BodyHandlers.discarding())
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun sleepBeforeRetry(attempt: Int) {
+&nbsp;        Thread.sleep(250L * (attempt + 1))
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun diagnosticRequest(name: String, url: String, username: String, token: String): JenkinsDiagnosticStep {
+&nbsp;        return runCatching {
+&nbsp;            val response = httpClient.send(request(url, username, token), HttpResponse.BodyHandlers.ofString())
+&nbsp;            JenkinsDiagnosticStep(
+&nbsp;                name = name,
+&nbsp;                url = url,
+&nbsp;                statusCode = response.statusCode(),
+&nbsp;                location = response.headers().firstValue(&quot;Location&quot;).orElse(null),
+&nbsp;                wwwAuthenticate = response.headers().firstValue(&quot;WWW-Authenticate&quot;).orElse(null),
+&nbsp;                contentType = response.headers().firstValue(&quot;Content-Type&quot;).orElse(null),
+&nbsp;                authHeaderSent = username.isNotBlank() &amp;&amp; token.isNotBlank(),
+&nbsp;                bodyPreview = compactBodyPreview(response.body()),
+&nbsp;                error = null,
+&nbsp;            )
+&nbsp;        }.getOrElse { error -&gt;
+&nbsp;            JenkinsDiagnosticStep(
+&nbsp;                name = name,
+&nbsp;                url = url,
+&nbsp;                statusCode = null,
+&nbsp;                location = null,
+&nbsp;                wwwAuthenticate = null,
+&nbsp;                contentType = null,
+&nbsp;                authHeaderSent = username.isNotBlank() &amp;&amp; token.isNotBlank(),
+&nbsp;                bodyPreview = &quot;&quot;,
+&nbsp;                error = error.message ?: error::class.java.simpleName,
+&nbsp;            )
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun compactBodyPreview(body: String): String =
+&nbsp;        body.replace(Regex(&quot;\\s+&quot;), &quot; &quot;).trim().take(240)
+&nbsp;
+&nbsp;    private fun request(url: String, username: String, token: String): HttpRequest {
+&nbsp;        val builder = HttpRequest.newBuilder()
+&nbsp;            .uri(URI.create(url))
+&nbsp;            .timeout(Duration.ofSeconds(20))
+&nbsp;            .version(HttpClient.Version.HTTP_1_1)
+&nbsp;            .header(&quot;Accept&quot;, &quot;application/json&quot;)
+&nbsp;            .header(&quot;Cache-Control&quot;, &quot;no-cache&quot;)
+&nbsp;            .header(&quot;Pragma&quot;, &quot;no-cache&quot;)
+&nbsp;            .header(&quot;User-Agent&quot;, &quot;skillab-ci-status-notifier&quot;)
+&nbsp;
+&nbsp;        if (username.isNotBlank() &amp;&amp; token.isNotBlank()) {
+&nbsp;            val encoded = Base64.getEncoder()
+&nbsp;                .encodeToString(&quot;$username:$token&quot;.toByteArray(StandardCharsets.UTF_8))
+&nbsp;            builder.header(&quot;Authorization&quot;, &quot;Basic $encoded&quot;)
+&nbsp;        }
+&nbsp;
+&nbsp;        return builder.build()
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun rootUrl(url: String): String {
+&nbsp;        val uri = URI.create(url)
+&nbsp;        val port = if (uri.port &gt;= 0) &quot;:${uri.port}&quot; else &quot;&quot;
+&nbsp;        val base = &quot;${uri.scheme}://${uri.host}$port&quot;
+&nbsp;        val path = uri.path.substringBefore(&quot;/job/&quot;, &quot;&quot;).trimEnd(&#39;/&#39;)
+&nbsp;        return if (path.isBlank()) base else &quot;$base$path&quot;
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun normalizeJobPath(jobPath: String): String {
+&nbsp;        val trimmed = jobPath.trim().trim(&#39;/&#39;)
+&nbsp;        if (trimmed.isBlank()) {
+&nbsp;            return &quot;&quot;
+&nbsp;        }
+&nbsp;        if (trimmed.contains(&quot;/job/&quot;) || trimmed.startsWith(&quot;job/&quot;)) {
+&nbsp;            return trimmed
+&nbsp;        }
+&nbsp;        return trimmed.split(&#39;/&#39;)
+&nbsp;            .filter { it.isNotBlank() }
+&nbsp;            .joinToString(&quot;/&quot;) { &quot;job/${encodeJobName(it)}&quot; }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun buildJenkinsUrl(normalizedBaseUrl: String, jobPath: String): String {
+&nbsp;        val normalizedPath = normalizeJobPath(jobPath)
+&nbsp;        return if (normalizedPath.isBlank()) normalizedBaseUrl else &quot;$normalizedBaseUrl/$normalizedPath&quot;
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun resolveJenkinsUrl(buildUrl: String, value: String): String {
+&nbsp;        return when {
+&nbsp;            value.startsWith(&quot;http://&quot;) || value.startsWith(&quot;https://&quot;) -&gt; value
+&nbsp;            value.startsWith(&quot;/&quot;) -&gt; URI.create(buildUrl).resolve(value).toString()
+&nbsp;            else -&gt; URI.create(buildUrl).resolve(value).toString()
+&nbsp;        }
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun encodePathSegment(value: String): String =
+&nbsp;        URLEncoder.encode(value, StandardCharsets.UTF_8).replace(&quot;+&quot;, &quot;%20&quot;)
+&nbsp;
+&nbsp;    private fun encodeJobName(value: String): String =
+&nbsp;        encodePathSegment(value).replace(&quot;%2F&quot;, &quot;%252F&quot;)
+&nbsp;
+&nbsp;    private fun stableId(value: String): String {
+&nbsp;        val digest = java.security.MessageDigest.getInstance(&quot;SHA-256&quot;)
+&nbsp;            .digest(value.toByteArray(StandardCharsets.UTF_8))
+&nbsp;        return digest.take(12).joinToString(&quot;&quot;) { &quot;%02x&quot;.format(it) }
+&nbsp;    }
+&nbsp;}
+&nbsp;
+&nbsp;private fun JsonElement.asJsonObjectOrNull(): JsonObject? =
+&nbsp;    if (isJsonObject) asJsonObject else null
+&nbsp;
+&nbsp;private fun JsonObject.string(name: String): String =
+&nbsp;    get(name)?.takeUnless { it.isJsonNull }?.asString.orEmpty()
+&nbsp;
+&nbsp;private fun JsonObject.nullableString(name: String): String? =
+&nbsp;    get(name)?.takeUnless { it.isJsonNull }?.asString
+&nbsp;
+&nbsp;private fun JsonObject.int(name: String): Int =
+&nbsp;    get(name)?.takeUnless { it.isJsonNull }?.asInt ?: 0
+&nbsp;
+&nbsp;private fun JsonObject.nullableInt(name: String): Int? =
+&nbsp;    get(name)?.takeUnless { it.isJsonNull }?.asInt
+&nbsp;
+&nbsp;private fun JsonObject.long(name: String): Long =
+&nbsp;    get(name)?.takeUnless { it.isJsonNull }?.asLong ?: 0L
+&nbsp;
+&nbsp;private fun JsonObject.nullableLong(name: String): Long? =
+&nbsp;    get(name)?.takeUnless { it.isJsonNull }?.asLong
+&nbsp;
+&nbsp;private fun JsonObject.boolean(name: String): Boolean =
+&nbsp;    get(name)?.takeUnless { it.isJsonNull }?.asBoolean ?: false
+&nbsp;
+&nbsp;private fun JsonObject.array(name: String): List&lt;JsonElement&gt; =
+&nbsp;    getAsJsonArray(name)?.toList().orEmpty()
+&nbsp;
+&nbsp;private fun JsonObject.obj(name: String): JsonObject? =
+&nbsp;    get(name)?.takeUnless { it.isJsonNull }?.asJsonObjectOrNull()
+&nbsp;
+&nbsp;class JenkinsHttpException(statusCode: Int, url: String, location: String?) : IllegalStateException(
+&nbsp;    buildString {
+&nbsp;        when (statusCode) {
+&nbsp;            401 -&gt; append(&quot;Jenkins authentication failed or this token cannot read the requested Jenkins root. Check the Jenkins username/API token, grant Overall/Read for root scans, or set a narrower Jenkins scan root. &quot;)
+&nbsp;            403 -&gt; append(&quot;Jenkins denied access. The user may not have permission for this job, or Jenkins may require authentication. &quot;)
+&nbsp;            404 -&gt; append(&quot;Jenkins job was not found. Check the Jenkins scan root. &quot;)
+&nbsp;            else -&gt; {
+&nbsp;                append(&quot;Jenkins returned HTTP &quot;)
+&nbsp;                append(statusCode)
+&nbsp;                append(&quot;. &quot;)
+&nbsp;            }
+&nbsp;        }
+&nbsp;        append(&quot;URL: &quot;)
+&nbsp;        append(url)
+&nbsp;        if (statusCode in 300..399 &amp;&amp; !location.isNullOrBlank()) {
+&nbsp;            append(&quot; and redirected to &quot;)
+&nbsp;            append(location)
+&nbsp;            append(&quot;. Check the Jenkins scan root and credentials.&quot;)
+&nbsp;        }
+&nbsp;    }
+&nbsp;)
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2026-04-24 15:51</div>
+</div>
+</body>
+</html>

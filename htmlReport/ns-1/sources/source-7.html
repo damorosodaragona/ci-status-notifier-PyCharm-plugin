@@ -1,0 +1,301 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <meta http-equiv="Content-Type" content="text/html;charset=UTF-8"> 
+  <title>Coverage Report > CiStatusSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">com.skillab.projector.cistatus</a>
+</div>
+
+<h1>Coverage Summary for Class: CiStatusSettings (com.skillab.projector.cistatus)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CiStatusSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    57.5%
+  </span>
+  <span class="absValue">
+    (23/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    13.3%
+  </span>
+  <span class="absValue">
+    (4/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.5%
+  </span>
+  <span class="absValue">
+    (24/44)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">CiStatusSettings$Companion</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">CiStatusSettings$State</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (15/15)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    59.5%
+  </span>
+  <span class="absValue">
+    (25/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    13.3%
+  </span>
+  <span class="absValue">
+    (4/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (40/60)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;package com.skillab.projector.cistatus
+&nbsp;
+&nbsp;import com.intellij.credentialStore.CredentialAttributes
+&nbsp;import com.intellij.credentialStore.Credentials
+&nbsp;import com.intellij.ide.passwordSafe.PasswordSafe
+&nbsp;import com.intellij.openapi.components.PersistentStateComponent
+&nbsp;import com.intellij.openapi.components.Service
+&nbsp;import com.intellij.openapi.components.State
+&nbsp;import com.intellij.openapi.components.Storage
+&nbsp;import com.intellij.openapi.project.Project
+&nbsp;
+<b class="fc">&nbsp;@Service(Service.Level.PROJECT)</b>
+&nbsp;@State(
+&nbsp;    name = &quot;SkillabCiStatusNotifier&quot;,
+&nbsp;    storages = [Storage(&quot;skillab-ci-status-notifier.xml&quot;)]
+&nbsp;)
+&nbsp;class CiStatusSettings : PersistentStateComponent&lt;CiStatusSettings.State&gt; {
+<b class="fc">&nbsp;    data class State(</b>
+<b class="fc">&nbsp;        var enabled: Boolean = true,</b>
+<b class="fc">&nbsp;        var provider: String = &quot;github&quot;,</b>
+<b class="fc">&nbsp;        var repository: String = &quot;&quot;,</b>
+<b class="fc">&nbsp;        var jenkinsBaseUrl: String = &quot;&quot;,</b>
+<b class="fc">&nbsp;        var jenkinsJobPath: String = &quot;&quot;,</b>
+<b class="fc">&nbsp;        var jenkinsUsername: String = &quot;&quot;,</b>
+<b class="fc">&nbsp;        var pollIntervalSeconds: Int = 60,</b>
+<b class="fc">&nbsp;        var notifyPending: Boolean = false,</b>
+<b class="fc">&nbsp;        var notifySuccess: Boolean = true,</b>
+<b class="fc">&nbsp;        var notifyFailure: Boolean = true,</b>
+<b class="fc">&nbsp;        var experimentalKeycloakInteractiveFallback: Boolean = false,</b>
+<b class="fc">&nbsp;        var experimentalKeycloakAutoLogin: Boolean = false,</b>
+<b class="fc">&nbsp;        var experimentalKeycloakDebug: Boolean = false,</b>
+<b class="fc">&nbsp;        var keycloakWebUsername: String = &quot;&quot;,</b>
+&nbsp;    )
+&nbsp;
+<b class="fc">&nbsp;    private var state = State()</b>
+&nbsp;
+<b class="nc">&nbsp;    override fun getState(): State = state</b>
+&nbsp;
+&nbsp;    override fun loadState(state: State) {
+<b class="fc">&nbsp;        this.state = state</b>
+&nbsp;    }
+&nbsp;
+&nbsp;    var enabled: Boolean
+<b class="fc">&nbsp;        get() = state.enabled</b>
+<b class="nc">&nbsp;        set(value) { state.enabled = value }</b>
+&nbsp;
+&nbsp;    var repository: String
+<b class="fc">&nbsp;        get() = state.repository</b>
+<b class="fc">&nbsp;        set(value) { state.repository = value.trim() }</b>
+&nbsp;
+&nbsp;    var provider: String
+<b class="fc">&nbsp;        get() = state.provider</b>
+<b class="fc">&nbsp;        set(value) { state.provider = value.lowercase().takeIf { it in setOf(&quot;github&quot;, &quot;jenkins&quot;) } ?: &quot;github&quot; }</b>
+&nbsp;
+&nbsp;    var jenkinsBaseUrl: String
+<b class="fc">&nbsp;        get() = state.jenkinsBaseUrl</b>
+<b class="fc">&nbsp;        set(value) { state.jenkinsBaseUrl = value.trim().trimEnd(&#39;/&#39;) }</b>
+&nbsp;
+&nbsp;    var jenkinsJobPath: String
+<b class="fc">&nbsp;        get() = state.jenkinsJobPath</b>
+<b class="fc">&nbsp;        set(value) { state.jenkinsJobPath = value.trim().trim(&#39;/&#39;) }</b>
+&nbsp;
+&nbsp;    var jenkinsUsername: String
+<b class="fc">&nbsp;        get() = state.jenkinsUsername</b>
+<b class="fc">&nbsp;        set(value) { state.jenkinsUsername = value.trim() }</b>
+&nbsp;
+&nbsp;    var pollIntervalSeconds: Int
+<b class="fc">&nbsp;        get() = state.pollIntervalSeconds</b>
+<b class="fc">&nbsp;        set(value) { state.pollIntervalSeconds = value.coerceIn(15, 3600) }</b>
+&nbsp;
+&nbsp;    var notifyPending: Boolean
+<b class="fc">&nbsp;        get() = state.notifyPending</b>
+<b class="nc">&nbsp;        set(value) { state.notifyPending = value }</b>
+&nbsp;
+&nbsp;    var notifySuccess: Boolean
+<b class="fc">&nbsp;        get() = state.notifySuccess</b>
+<b class="nc">&nbsp;        set(value) { state.notifySuccess = value }</b>
+&nbsp;
+&nbsp;    var notifyFailure: Boolean
+<b class="fc">&nbsp;        get() = state.notifyFailure</b>
+<b class="nc">&nbsp;        set(value) { state.notifyFailure = value }</b>
+&nbsp;
+&nbsp;    var experimentalKeycloakInteractiveFallback: Boolean
+<b class="fc">&nbsp;        get() = state.experimentalKeycloakInteractiveFallback</b>
+<b class="nc">&nbsp;        set(value) { state.experimentalKeycloakInteractiveFallback = value }</b>
+&nbsp;
+&nbsp;    var experimentalKeycloakAutoLogin: Boolean
+<b class="fc">&nbsp;        get() = state.experimentalKeycloakAutoLogin</b>
+<b class="nc">&nbsp;        set(value) { state.experimentalKeycloakAutoLogin = value }</b>
+&nbsp;
+&nbsp;    var experimentalKeycloakDebug: Boolean
+<b class="fc">&nbsp;        get() = state.experimentalKeycloakDebug</b>
+<b class="nc">&nbsp;        set(value) { state.experimentalKeycloakDebug = value }</b>
+&nbsp;
+&nbsp;    var keycloakWebUsername: String
+<b class="fc">&nbsp;        get() = state.keycloakWebUsername</b>
+<b class="fc">&nbsp;        set(value) { state.keycloakWebUsername = value.trim() }</b>
+&nbsp;
+<b class="nc">&nbsp;    fun getToken(): String = PasswordSafe.instance.getPassword(credentialAttributes()) ?: &quot;&quot;</b>
+&nbsp;
+&nbsp;    fun setToken(token: String) {
+<b class="nc">&nbsp;        val credentials = if (token.isBlank()) null else Credentials(&quot;github&quot;, token)</b>
+<b class="nc">&nbsp;        PasswordSafe.instance.set(credentialAttributes(), credentials)</b>
+&nbsp;    }
+&nbsp;
+<b class="nc">&nbsp;    fun getJenkinsToken(): String = PasswordSafe.instance.getPassword(jenkinsCredentialAttributes()) ?: &quot;&quot;</b>
+&nbsp;
+&nbsp;    fun setJenkinsToken(token: String) {
+<b class="nc">&nbsp;        val credentials = if (token.isBlank()) null else Credentials(jenkinsUsername.ifBlank { &quot;jenkins&quot; }, token)</b>
+<b class="nc">&nbsp;        PasswordSafe.instance.set(jenkinsCredentialAttributes(), credentials)</b>
+&nbsp;    }
+&nbsp;
+<b class="nc">&nbsp;    fun getKeycloakWebPassword(): String = PasswordSafe.instance.getPassword(keycloakCredentialAttributes()) ?: &quot;&quot;</b>
+&nbsp;
+&nbsp;    fun setKeycloakWebPassword(password: String) {
+<b class="nc">&nbsp;        val credentials = if (password.isBlank()) null else Credentials(keycloakWebUsername.ifBlank { &quot;keycloak&quot; }, password)</b>
+<b class="nc">&nbsp;        PasswordSafe.instance.set(keycloakCredentialAttributes(), credentials)</b>
+&nbsp;    }
+&nbsp;
+&nbsp;    private fun credentialAttributes(): CredentialAttributes =
+<b class="nc">&nbsp;        CredentialAttributes(&quot;SkillabCiStatusNotifier:${repository.ifBlank { &quot;default&quot; }}&quot;)</b>
+&nbsp;
+&nbsp;    private fun jenkinsCredentialAttributes(): CredentialAttributes =
+<b class="nc">&nbsp;        CredentialAttributes(&quot;SkillabCiStatusNotifier:Jenkins:${jenkinsBaseUrl.ifBlank { &quot;default&quot; }}:${jenkinsUsername.ifBlank { &quot;default&quot; }}&quot;)</b>
+&nbsp;
+&nbsp;    private fun keycloakCredentialAttributes(): CredentialAttributes =
+<b class="nc">&nbsp;        CredentialAttributes(&quot;SkillabCiStatusNotifier:Keycloak:${jenkinsBaseUrl.ifBlank { &quot;default&quot; }}:${keycloakWebUsername.ifBlank { &quot;default&quot; }}&quot;)</b>
+&nbsp;
+&nbsp;    companion object {
+<b class="fc">&nbsp;        fun getInstance(project: Project): CiStatusSettings = project.getService(CiStatusSettings::class.java)</b>
+&nbsp;    }
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2026-04-24 15:51</div>
+</div>
+</body>
+</html>
