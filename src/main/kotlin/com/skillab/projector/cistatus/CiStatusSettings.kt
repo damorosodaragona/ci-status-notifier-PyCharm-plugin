@@ -28,6 +28,7 @@ class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
         var notifyFailure: Boolean = true,
         var experimentalKeycloakInteractiveFallback: Boolean = false,
         var experimentalKeycloakAutoLogin: Boolean = false,
+        var experimentalKeycloakDebug: Boolean = false,
         var keycloakWebUsername: String = "",
     )
 
@@ -86,6 +87,10 @@ class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
     var experimentalKeycloakAutoLogin: Boolean
         get() = state.experimentalKeycloakAutoLogin
         set(value) { state.experimentalKeycloakAutoLogin = value }
+
+    var experimentalKeycloakDebug: Boolean
+        get() = state.experimentalKeycloakDebug
+        set(value) { state.experimentalKeycloakDebug = value }
 
     var keycloakWebUsername: String
         get() = state.keycloakWebUsername

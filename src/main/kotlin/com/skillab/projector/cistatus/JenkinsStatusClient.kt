@@ -497,15 +497,28 @@ class JenkinsStatusClient(private val project: Project? = null) {
     private fun recoverAuthentication(url: String): Boolean {
         val project = project ?: return false
         val settings = CiStatusSettings.getInstance(project)
-        if (!settings.experimentalKeycloakInteractiveFallback) return false
+        if (!settings.experimentalKeycloakInteractiveFallback) {
+            CiStatusDebugLog.keycloak(project, "recover-auth skipped: fallback disabled url=$url")
+            return false
+        }
         val service = KeycloakSessionService.getInstance(project)
         val base = rootUrl(url)
-        if (service.attemptAutoLoginInBackground(base)) {
+        val mode = currentRequestMode()
+        CiStatusDebugLog.keycloak(project, "recover-auth start mode=$mode base=$base url=$url")
+        val autoLoginRecovered = service.attemptAutoLoginInBackground(base)
+        CiStatusDebugLog.keycloak(project, "recover-auth auto-login result=$autoLoginRecovered mode=$mode")
+        if (autoLoginRecovered) {
             return true
         }
-        return when (currentRequestMode()) {
-            JenkinsRequestMode.MANUAL -> service.ensureLoggedIn(base)
-            JenkinsRequestMode.BACKGROUND -> false
+        return when (mode) {
+            JenkinsRequestMode.MANUAL -> {
+                CiStatusDebugLog.keycloak(project, "recover-auth opening interactive login for manual request")
+                service.ensureLoggedIn(base)
+            }
+            JenkinsRequestMode.BACKGROUND -> {
+                CiStatusDebugLog.keycloak(project, "recover-auth background request: interactive login deferred to notification action")
+                false
+            }
         }
     }
 

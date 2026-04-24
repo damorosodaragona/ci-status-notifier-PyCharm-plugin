@@ -28,6 +28,7 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
     private val notifyFailure = JBCheckBox("Notify failed/error statuses")
     private val experimentalKeycloakInteractiveFallback = JBCheckBox("Enable Keycloak interactive login fallback (experimental)")
     private val experimentalKeycloakAutoLogin = JBCheckBox("Enable Keycloak auto-login (experimental)")
+    private val experimentalKeycloakDebug = JBCheckBox("Enable Keycloak authentication debug log")
     private val keycloakWebUsername = JBTextField()
     private val keycloakWebPassword = JBPasswordField()
     private var panel: JPanel? = null
@@ -51,6 +52,7 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
             .addComponent(JBLabel("Otherwise, you can try the experimental Keycloak auto-login feature."))
             .addComponent(experimentalKeycloakInteractiveFallback)
             .addComponent(experimentalKeycloakAutoLogin)
+            .addComponent(experimentalKeycloakDebug)
             .addLabeledComponent("Keycloak web username", keycloakWebUsername)
             .addLabeledComponent("Keycloak web password", keycloakWebPassword)
             .addLabeledComponent("Poll interval seconds", pollInterval)
@@ -74,6 +76,7 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
             String(jenkinsToken.password) != settings.getJenkinsToken() ||
             experimentalKeycloakInteractiveFallback.isSelected != settings.experimentalKeycloakInteractiveFallback ||
             experimentalKeycloakAutoLogin.isSelected != settings.experimentalKeycloakAutoLogin ||
+            experimentalKeycloakDebug.isSelected != settings.experimentalKeycloakDebug ||
             keycloakWebUsername.text.trim() != settings.keycloakWebUsername ||
             String(keycloakWebPassword.password) != settings.getKeycloakWebPassword() ||
             pollInterval.text.trim() != settings.pollIntervalSeconds.toString() ||
@@ -93,6 +96,7 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
         settings.setJenkinsToken(String(jenkinsToken.password))
         settings.experimentalKeycloakInteractiveFallback = experimentalKeycloakInteractiveFallback.isSelected
         settings.experimentalKeycloakAutoLogin = experimentalKeycloakAutoLogin.isSelected
+        settings.experimentalKeycloakDebug = experimentalKeycloakDebug.isSelected
         settings.keycloakWebUsername = keycloakWebUsername.text
         settings.setKeycloakWebPassword(String(keycloakWebPassword.password))
         settings.pollIntervalSeconds = pollInterval.text.toIntOrNull() ?: 60
@@ -112,6 +116,7 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
         jenkinsToken.text = settings.getJenkinsToken()
         experimentalKeycloakInteractiveFallback.isSelected = settings.experimentalKeycloakInteractiveFallback
         experimentalKeycloakAutoLogin.isSelected = settings.experimentalKeycloakAutoLogin
+        experimentalKeycloakDebug.isSelected = settings.experimentalKeycloakDebug
         keycloakWebUsername.text = settings.keycloakWebUsername
         keycloakWebPassword.text = settings.getKeycloakWebPassword()
         pollInterval.text = settings.pollIntervalSeconds.toString()
