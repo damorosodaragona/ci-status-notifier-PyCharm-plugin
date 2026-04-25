@@ -1,0 +1,92 @@
+# .github/workflows/auto-release-tag.yml
+name: Auto Release Tag
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  create-tag:
+    name: Create release tag from merged PR
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.body, 'Release:')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          BODY="${{ github.event.pull_request.body }}"
+
+          RELEASE_LINE=$(echo "$BODY" | grep -iE '^Release:[[:space:]]*(v[0-9]+\.[0-9]+\.[0-9]+|patch|minor|major)[[:space:]]*$' | head -n1 || true)
+
+          if [ -z "$RELEASE_LINE" ]; then
+            echo "No valid Release line found. Expected: Release: patch|minor|major|v0.6.2"
+            exit 1
+          fi
+
+          RELEASE_VALUE=$(echo "$RELEASE_LINE" | sed -E 's/^Release:[[:space:]]*//I' | xargs)
+
+          git fetch --tags
+
+          if [[ "$RELEASE_VALUE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            TAG="$RELEASE_VALUE"
+          else
+            LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+
+            if [ -z "$LAST_TAG" ]; then
+              LAST_TAG="v0.0.0"
+            fi
+
+            VERSION="${LAST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+            case "$RELEASE_VALUE" in
+              patch)
+                PATCH=$((PATCH + 1))
+                ;;
+              minor)
+                MINOR=$((MINOR + 1))
+                PATCH=0
+                ;;
+              major)
+                MAJOR=$((MAJOR + 1))
+                MINOR=0
+                PATCH=0
+                ;;
+              *)
+                echo "Invalid release value: $RELEASE_VALUE"
+                exit 1
+                ;;
+            esac
+
+            TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists."
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: $TAG"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
