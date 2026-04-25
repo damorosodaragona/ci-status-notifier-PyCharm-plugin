@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
@@ -81,7 +81,7 @@ private class JenkinsDashboardPanel(
     private val jenkins = JenkinsStatusClient(project)
     private val shaReader = GitShaReader(project)
 
-    private val summary = JBLabel("Configure Jenkins in Settings | Tools | CI Status Notifier.")
+    private val summary = JBLabel("Configure Jenkins in Settings | Tools | Jenkins CI Notifier.")
     private val jobsRoot = DefaultMutableTreeNode("Jenkins")
     private val jobsModel = DefaultTreeModel(jobsRoot)
     private val jobsTree = JTree(jobsModel)
@@ -101,7 +101,7 @@ private class JenkinsDashboardPanel(
     private val buildTitle = JLabel("No build selected")
     private val buildMeta = secondaryLabel("Select a Jenkins job to inspect stages and artifacts.")
     private val kpiPanel = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0))
-    private val artifactCacheRoot: Path = Path.of(PathManager.getSystemPath(), "ci-status-notifier", "jenkins-artifacts")
+    private val artifactCacheRoot: Path = Path.of(PathManager.getSystemPath(), "jenkins-ci-notifier", "jenkins-artifacts")
     private val refreshButton = toolbarButton("Refresh", AllIcons.Actions.Refresh)
     private val testJenkinsButton = toolbarButton("Test Jenkins", AllIcons.Actions.Lightning)
     private val openJenkinsButton = toolbarButton("Open Jenkins", AllIcons.General.Web)
@@ -328,12 +328,12 @@ private class JenkinsDashboardPanel(
     private fun refresh(manual: Boolean = false) {
         authenticationPaused = false
         if (settings.provider != "jenkins") {
-            showMessage("Select provider 'jenkins' in Settings | Tools | CI Status Notifier to use this dashboard.", updateSummary = true)
+            showMessage("Select provider 'jenkins' in Settings | Tools | Jenkins CI Notifier to use this dashboard.", updateSummary = true)
             return
         }
 
         if (settings.jenkinsBaseUrl.isBlank()) {
-            showMessage("Configure Jenkins URL in Settings | Tools | CI Status Notifier.", updateSummary = true)
+            showMessage("Configure Jenkins URL in Settings | Tools | Jenkins CI Notifier.", updateSummary = true)
             return
         }
 
@@ -954,7 +954,7 @@ private class JenkinsDashboardPanel(
 
     private fun notifyError(title: String, message: String) {
         val notification = NotificationGroupManager.getInstance()
-            .getNotificationGroup("CI Status Notifier")
+            .getNotificationGroup("Jenkins CI Notifier")
             .createNotification(title, message.take(240), NotificationType.ERROR)
         notification.addAction(NotificationAction.createSimple("Copy details") {
             CopyPasteManager.getInstance().setContents(StringSelection(message))

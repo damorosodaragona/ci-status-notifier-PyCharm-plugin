@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.intellij.openapi.project.Project
 import com.google.gson.JsonElement
@@ -581,7 +581,7 @@ class JenkinsStatusClient(private val project: Project? = null) {
             .header("Accept", "application/json")
             .header("Cache-Control", "no-cache")
             .header("Pragma", "no-cache")
-            .header("User-Agent", "skillab-ci-status-notifier")
+            .header("User-Agent", "jenkins-notifier")
 
         if (username.isNotBlank() && token.isNotBlank()) {
             val encoded = Base64.getEncoder()

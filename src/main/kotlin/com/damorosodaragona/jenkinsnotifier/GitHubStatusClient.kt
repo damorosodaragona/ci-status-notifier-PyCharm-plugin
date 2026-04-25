@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.google.gson.JsonParser
 import java.net.URI
@@ -32,7 +32,7 @@ class GitHubStatusClient {
             .uri(URI.create("https://api.github.com/repos/$repository/commits/$sha/status"))
             .timeout(Duration.ofSeconds(20))
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "skillab-ci-status-notifier")
+            .header("User-Agent", "jenkins-notifier")
 
         if (token.isNotBlank()) {
             requestBuilder.header("Authorization", "Bearer $token")

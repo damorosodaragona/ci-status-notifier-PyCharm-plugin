@@ -1,28 +1,30 @@
 <idea-plugin>
-    <id>com.skillab.projector.ci-status-notifier</id>
-    <name>CI Status Notifier</name>
-    <vendor email="dev@skillab-project.eu">Skillab Projector</vendor>
+    <id>com.damorosodaragona.jenkinsnotifier</id>
+    <name>Jenkins CI Notifier</name>
+    <vendor>Dario Amoroso d’Aragona</vendor>
 
     <description>
-        Watches GitHub commit statuses for the current Git commit and shows IDE notifications when Jenkins-backed CI changes state.
+        Monitors Jenkins-backed CI status for the current Git commit and shows IDE notifications when the build state changes.
     </description>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>Git4Idea</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <projectService serviceImplementation="com.skillab.projector.cistatus.CiStatusSettings"/>
+        <projectService serviceImplementation="com.damorosodaragona.jenkinsnotifier.CiStatusSettings"/>
+        <projectService serviceImplementation="com.damorosodaragona.jenkinsnotifier.LegacySettingsMigrationState"/>
+        <projectService serviceImplementation="com.damorosodaragona.jenkinsnotifier.LegacyCiStatusSettings"/>
         <projectConfigurable
-            instance="com.skillab.projector.cistatus.CiStatusConfigurable"
+            instance="com.damorosodaragona.jenkinsnotifier.CiStatusConfigurable"
             parentId="tools"
-            displayName="CI Status Notifier"/>
-        <postStartupActivity implementation="com.skillab.projector.cistatus.CiStatusStartupActivity"/>
+            displayName="Jenkins CI Notifier"/>
+        <postStartupActivity implementation="com.damorosodaragona.jenkinsnotifier.CiStatusStartupActivity"/>
         <toolWindow
-            id="CI Status"
+            id="Jenkins CI"
             anchor="right"
-            factoryClass="com.skillab.projector.cistatus.CiStatusToolWindowFactory"/>
+            factoryClass="com.damorosodaragona.jenkinsnotifier.CiStatusToolWindowFactory"/>
         <notificationGroup
-            id="CI Status Notifier"
+            id="Jenkins CI Notifier"
             displayType="BALLOON"
             isLogByDefault="true"/>
     </extensions>

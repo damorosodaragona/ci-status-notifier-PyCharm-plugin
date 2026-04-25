@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.Credentials
@@ -11,8 +11,8 @@ import com.intellij.openapi.project.Project
 
 @Service(Service.Level.PROJECT)
 @State(
-    name = "SkillabCiStatusNotifier",
-    storages = [Storage("skillab-ci-status-notifier.xml")]
+    name = "JenkinsCiNotifier",
+    storages = [Storage("jenkins-ci-notifier.xml")]
 )
 class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
     data class State(
@@ -118,13 +118,13 @@ class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
     }
 
     private fun credentialAttributes(): CredentialAttributes =
-        CredentialAttributes("SkillabCiStatusNotifier:${repository.ifBlank { "default" }}")
+        CredentialAttributes("JenkinsCiNotifier:${repository.ifBlank { "default" }}")
 
     private fun jenkinsCredentialAttributes(): CredentialAttributes =
-        CredentialAttributes("SkillabCiStatusNotifier:Jenkins:${jenkinsBaseUrl.ifBlank { "default" }}:${jenkinsUsername.ifBlank { "default" }}")
+        CredentialAttributes("JenkinsCiNotifier:Jenkins:${jenkinsBaseUrl.ifBlank { "default" }}:${jenkinsUsername.ifBlank { "default" }}")
 
     private fun keycloakCredentialAttributes(): CredentialAttributes =
-        CredentialAttributes("SkillabCiStatusNotifier:Keycloak:${jenkinsBaseUrl.ifBlank { "default" }}:${keycloakWebUsername.ifBlank { "default" }}")
+        CredentialAttributes("JenkinsCiNotifier:Keycloak:${jenkinsBaseUrl.ifBlank { "default" }}:${keycloakWebUsername.ifBlank { "default" }}")
 
     companion object {
         fun getInstance(project: Project): CiStatusSettings = project.getService(CiStatusSettings::class.java)

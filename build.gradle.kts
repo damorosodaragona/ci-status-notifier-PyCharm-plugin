@@ -34,7 +34,7 @@ dependencies {
 
 intellijPlatform {
     pluginConfiguration {
-        id = "com.skillab.projector.ci-status-notifier"
+        id = "com.damorosodaragona.jenkinsnotifier"
         name = providers.gradleProperty("pluginName")
         version = providers.gradleProperty("pluginVersion")
 

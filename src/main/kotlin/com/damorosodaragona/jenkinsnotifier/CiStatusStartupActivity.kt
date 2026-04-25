@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class CiStatusStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
+        LegacySettingsMigration.run(project)
         val watcher = CiStatusWatcher(project)
         Disposer.register(project, watcher)
         watcher.start()

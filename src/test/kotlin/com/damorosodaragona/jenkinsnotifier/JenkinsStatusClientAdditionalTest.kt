@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
