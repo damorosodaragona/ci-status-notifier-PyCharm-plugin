@@ -26,10 +26,10 @@ class CiStatusNotifier(private val project: Project) {
 
         val content = buildContent(summary)
         val notification = NotificationGroupManager.getInstance()
-            .getNotificationGroup("CI Status Notifier")
+            .getNotificationGroup("Jenkins CI Notifier")
             .createNotification(title, content, notificationType)
 
-        notification.addAction(NotificationAction.createSimple("Show CI Status") {
+        notification.addAction(NotificationAction.createSimple("Show Jenkins CI") {
             showCiStatus()
         })
 
@@ -71,10 +71,10 @@ class CiStatusNotifier(private val project: Project) {
         }
 
         val notification = NotificationGroupManager.getInstance()
-            .getNotificationGroup("CI Status Notifier")
+            .getNotificationGroup("Jenkins CI Notifier")
             .createNotification(title, content, notificationType)
 
-        notification.addAction(NotificationAction.createSimple("Show CI Status") {
+        notification.addAction(NotificationAction.createSimple("Show Jenkins CI") {
             showCiStatus()
         })
         notification.addAction(NotificationAction.createSimple("Open Jenkins") {
@@ -92,7 +92,7 @@ class CiStatusNotifier(private val project: Project) {
 
     fun notifyJenkinsAuthenticationExpired(onLogin: () -> Unit) {
         val notification = NotificationGroupManager.getInstance()
-            .getNotificationGroup("CI Status Notifier")
+            .getNotificationGroup("Jenkins CI Notifier")
             .createNotification(
                 "Jenkins authentication expired",
                 "Automatic monitoring was paused because Jenkins requires a new login.",
@@ -107,15 +107,15 @@ class CiStatusNotifier(private val project: Project) {
 
     fun notifyConfigurationProblem(message: String) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("CI Status Notifier")
-            .createNotification("CI Status Notifier", message, NotificationType.WARNING)
+            .getNotificationGroup("Jenkins CI Notifier")
+            .createNotification("Jenkins CI Notifier", message, NotificationType.WARNING)
             .notify(project)
     }
 
     private fun showCiStatus() {
         ApplicationManager.getApplication().invokeLater {
             if (project.isDisposed) return@invokeLater
-            val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("CI Status") ?: return@invokeLater
+            val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Jenkins CI") ?: return@invokeLater
             toolWindow.show()
             project.messageBus.syncPublisher(CiStatusRefreshListener.TOPIC).refreshRequested("notification")
         }

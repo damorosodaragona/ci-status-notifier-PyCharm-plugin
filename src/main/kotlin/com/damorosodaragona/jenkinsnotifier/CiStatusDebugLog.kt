@@ -10,7 +10,7 @@ import java.time.format.DateTimeFormatter
 
 object CiStatusDebugLog {
     private val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
-    private val logFile: Path = Path.of(PathManager.getLogPath(), "ci-status-notifier-keycloak-debug.log")
+    private val logFile: Path = Path.of(PathManager.getLogPath(), "jenkins-ci-notifier-keycloak-debug.log")
 
     fun keycloak(project: Project?, message: String) {
         runCatching {

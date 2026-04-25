@@ -11,8 +11,8 @@ import com.intellij.openapi.project.Project
 
 @Service(Service.Level.PROJECT)
 @State(
-    name = "JenkinsNotifier",
-    storages = [Storage("jenkins-notifier.xml")]
+    name = "JenkinsCiNotifier",
+    storages = [Storage("jenkins-ci-notifier.xml")]
 )
 class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
     data class State(
@@ -118,13 +118,13 @@ class CiStatusSettings : PersistentStateComponent<CiStatusSettings.State> {
     }
 
     private fun credentialAttributes(): CredentialAttributes =
-        CredentialAttributes("JenkinsNotifier:${repository.ifBlank { "default" }}")
+        CredentialAttributes("JenkinsCiNotifier:${repository.ifBlank { "default" }}")
 
     private fun jenkinsCredentialAttributes(): CredentialAttributes =
-        CredentialAttributes("JenkinsNotifier:Jenkins:${jenkinsBaseUrl.ifBlank { "default" }}:${jenkinsUsername.ifBlank { "default" }}")
+        CredentialAttributes("JenkinsCiNotifier:Jenkins:${jenkinsBaseUrl.ifBlank { "default" }}:${jenkinsUsername.ifBlank { "default" }}")
 
     private fun keycloakCredentialAttributes(): CredentialAttributes =
-        CredentialAttributes("JenkinsNotifier:Keycloak:${jenkinsBaseUrl.ifBlank { "default" }}:${keycloakWebUsername.ifBlank { "default" }}")
+        CredentialAttributes("JenkinsCiNotifier:Keycloak:${jenkinsBaseUrl.ifBlank { "default" }}:${keycloakWebUsername.ifBlank { "default" }}")
 
     companion object {
         fun getInstance(project: Project): CiStatusSettings = project.getService(CiStatusSettings::class.java)

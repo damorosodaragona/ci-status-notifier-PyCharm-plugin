@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class CiStatusStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
+        LegacySettingsMigration.run(project)
         val watcher = CiStatusWatcher(project)
         Disposer.register(project, watcher)
         watcher.start()

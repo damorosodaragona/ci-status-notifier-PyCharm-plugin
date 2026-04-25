@@ -5,4 +5,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = "ci-status-notifier"
+rootProject.name = "jenkins-ci-notifier"

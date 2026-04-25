@@ -7,7 +7,7 @@ interface CiStatusRefreshListener {
 
     companion object {
         @JvmField
-        val TOPIC: Topic<CiStatusRefreshListener> = Topic.create("CI Status Refresh", CiStatusRefreshListener::class.java)
+        val TOPIC: Topic<CiStatusRefreshListener> = Topic.create("Jenkins CI Refresh", CiStatusRefreshListener::class.java)
     }
 }
 
@@ -16,6 +16,6 @@ interface CiStatusJenkinsBuildListener {
 
     companion object {
         @JvmField
-        val TOPIC: Topic<CiStatusJenkinsBuildListener> = Topic.create("CI Status Jenkins Build", CiStatusJenkinsBuildListener::class.java)
+        val TOPIC: Topic<CiStatusJenkinsBuildListener> = Topic.create("Jenkins CI Build", CiStatusJenkinsBuildListener::class.java)
     }
 }

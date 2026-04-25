@@ -1,10 +1,10 @@
 <idea-plugin>
     <id>com.damorosodaragona.jenkinsnotifier</id>
-    <name>CI Status Notifier</name>
+    <name>Jenkins CI Notifier</name>
     <vendor>Dario Amoroso d’Aragona</vendor>
 
     <description>
-        Watches GitHub commit statuses for the current Git commit and shows IDE notifications when Jenkins-backed CI changes state.
+        Monitors Jenkins-backed CI status for the current Git commit and shows IDE notifications when the build state changes.
     </description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -12,17 +12,19 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <projectService serviceImplementation="com.damorosodaragona.jenkinsnotifier.CiStatusSettings"/>
+        <projectService serviceImplementation="com.damorosodaragona.jenkinsnotifier.LegacySettingsMigrationState"/>
+        <projectService serviceImplementation="com.damorosodaragona.jenkinsnotifier.LegacyCiStatusSettings"/>
         <projectConfigurable
             instance="com.damorosodaragona.jenkinsnotifier.CiStatusConfigurable"
             parentId="tools"
-            displayName="CI Status Notifier"/>
+            displayName="Jenkins CI Notifier"/>
         <postStartupActivity implementation="com.damorosodaragona.jenkinsnotifier.CiStatusStartupActivity"/>
         <toolWindow
-            id="CI Status"
+            id="Jenkins CI"
             anchor="right"
             factoryClass="com.damorosodaragona.jenkinsnotifier.CiStatusToolWindowFactory"/>
         <notificationGroup
-            id="CI Status Notifier"
+            id="Jenkins CI Notifier"
             displayType="BALLOON"
             isLogByDefault="true"/>
     </extensions>

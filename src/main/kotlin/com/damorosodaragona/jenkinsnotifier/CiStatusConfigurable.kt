@@ -33,7 +33,7 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
     private val keycloakWebPassword = JBPasswordField()
     private var panel: JPanel? = null
 
-    override fun getDisplayName(): String = "CI Status Notifier"
+    override fun getDisplayName(): String = "Jenkins CI Notifier"
 
     override fun createComponent(): JComponent {
         panel = FormBuilder.createFormBuilder()
