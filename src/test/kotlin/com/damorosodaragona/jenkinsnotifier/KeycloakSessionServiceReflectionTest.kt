@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.intellij.openapi.project.Project
 import java.lang.reflect.Proxy

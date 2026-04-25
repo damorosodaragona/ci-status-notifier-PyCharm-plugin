@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager

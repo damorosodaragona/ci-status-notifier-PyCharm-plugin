@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction

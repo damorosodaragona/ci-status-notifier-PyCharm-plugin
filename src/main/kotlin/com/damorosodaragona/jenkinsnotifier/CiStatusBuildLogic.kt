@@ -1,4 +1,4 @@
-package com.skillab.projector.cistatus
+package com.damorosodaragona.jenkinsnotifier
 
 internal data class JenkinsTransitionDecision(
     val requestRefresh: Boolean,
