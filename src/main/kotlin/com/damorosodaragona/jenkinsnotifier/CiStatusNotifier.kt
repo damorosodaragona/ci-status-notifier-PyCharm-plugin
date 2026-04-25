@@ -91,6 +91,7 @@ class CiStatusNotifier(private val project: Project) {
 
 
     fun notifyJenkinsAuthenticationExpired(onLogin: () -> Unit) {
+        CiStatusDebugLog.keycloak(project, "auth-notify EMIT: Jenkins authentication notification created")
         val notification = NotificationGroupManager.getInstance()
             .getNotificationGroup("Jenkins CI Notifier")
             .createNotification(
@@ -99,10 +100,12 @@ class CiStatusNotifier(private val project: Project) {
                 NotificationType.WARNING,
             )
         notification.addAction(NotificationAction.createSimple("Login") {
+            CiStatusDebugLog.keycloak(project, "auth-notify ACTION: Login clicked")
             onLogin()
             notification.expire()
         })
         notification.notify(project)
+        CiStatusDebugLog.keycloak(project, "auth-notify SENT: Jenkins authentication notification shown")
     }
 
     fun notifyConfigurationProblem(message: String) {

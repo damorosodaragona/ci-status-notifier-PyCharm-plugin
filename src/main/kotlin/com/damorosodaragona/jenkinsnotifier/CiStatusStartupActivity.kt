@@ -118,13 +118,26 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             authenticationPaused = true
             heavyPollingActive = false
             trackedRunningBuildKey = null
-            notifier.notifyJenkinsAuthenticationExpired {
-                ApplicationManager.getApplication().executeOnPooledThread {
-                    val recovered = KeycloakSessionService.getInstance(project).ensureLoggedIn(settings.jenkinsBaseUrl)
-                    if (recovered) {
-                        authenticationPaused = false
-                        nextLightPollAtMillis = 0L
-                        requestToolWindowRefresh("keycloak-login")
+            ApplicationManager.getApplication().executeOnPooledThread {
+                CiStatusDebugLog.keycloak(project, "auth-notify startup check start source=polling")
+                val recovered = recoverAuthenticationFromNotification(interactiveOnFailure = false)
+                if (recovered) {
+                    CiStatusDebugLog.keycloak(project, "auth-notify startup SKIP: auto-login/recover succeeded source=polling")
+                    authenticationPaused = false
+                    nextLightPollAtMillis = 0L
+                    requestToolWindowRefresh("keycloak-auto-login")
+                } else {
+                    CiStatusDebugLog.keycloak(project, "auth-notify startup SHOW: auto-login/recover failed source=polling")
+                    notifier.notifyJenkinsAuthenticationExpired {
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            CiStatusDebugLog.keycloak(project, "auth-notify startup CLICK: retry auth with interactive fallback")
+                            val loginRecovered = recoverAuthenticationFromNotification(interactiveOnFailure = true)
+                            if (loginRecovered) {
+                                authenticationPaused = false
+                                nextLightPollAtMillis = 0L
+                                requestToolWindowRefresh("keycloak-login")
+                            }
+                        }
                     }
                 }
             }
@@ -134,6 +147,25 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             running.set(false)
         }
     }
+
+
+    private fun recoverAuthenticationFromNotification(interactiveOnFailure: Boolean): Boolean {
+        val service = KeycloakSessionService.getInstance(project)
+        val base = settings.jenkinsBaseUrl
+        CiStatusDebugLog.keycloak(project, "notification-auth start mode=BACKGROUND interactiveOnFailure=$interactiveOnFailure base=$base")
+        val autoLoginRecovered = service.attemptAutoLoginInBackground(base)
+        CiStatusDebugLog.keycloak(project, "notification-auth auto-login result=$autoLoginRecovered mode=BACKGROUND interactiveOnFailure=$interactiveOnFailure")
+        if (autoLoginRecovered) {
+            return true
+        }
+        if (!interactiveOnFailure) {
+            CiStatusDebugLog.keycloak(project, "notification-auth interactive login deferred: auto-login failed")
+            return false
+        }
+        CiStatusDebugLog.keycloak(project, "notification-auth opening interactive login after auto-login failed")
+        return service.ensureLoggedIn(base)
+    }
+
 
     private fun poll() {
         if (project.isDisposed || !settings.enabled || authenticationPaused) {
