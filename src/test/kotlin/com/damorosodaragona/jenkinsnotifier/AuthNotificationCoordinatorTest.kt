@@ -7,6 +7,17 @@ import kotlin.test.assertTrue
 
 class AuthNotificationCoordinatorTest {
     @Test
+    fun `decision enum exposes both recovery outcomes`() {
+        assertEquals(
+            listOf(
+                AuthNotificationCoordinator.Decision.SkippedBecauseRecovered,
+                AuthNotificationCoordinator.Decision.NotificationShown,
+            ),
+            AuthNotificationCoordinator.Decision.entries.toList(),
+        )
+    }
+
+    @Test
     fun `does not show notification when auto-login recovers authentication`() {
         var notificationShown = false
         val logs = mutableListOf<String>()

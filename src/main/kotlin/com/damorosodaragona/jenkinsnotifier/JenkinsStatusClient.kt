@@ -100,7 +100,16 @@ enum class JenkinsRequestMode { MANUAL, BACKGROUND }
 
 class JenkinsAuthenticationExpiredException(val jenkinsUrl: String) : RuntimeException("Jenkins authentication expired. Login required.")
 
-class JenkinsStatusClient(private val project: Project? = null) {
+class JenkinsStatusClient(
+    private val project: Project? = null,
+    private val maxArtifactCount: Int = 500,
+    private val maxArtifactBytes: Long = 100L * 1024L * 1024L,
+    private val httpClientOverride: HttpClient? = null,
+    private val authenticationRecoveryOverride: ((String) -> Boolean)? = null,
+    private val autoLoginAttemptOverride: ((KeycloakSessionService, String) -> Boolean)? = null,
+    private val interactiveLoginOverride: ((KeycloakSessionService, String) -> Boolean)? = null,
+    private val sleepOverride: ((Long) -> Unit)? = null,
+) {
     companion object {
         private val requestMode = ThreadLocal.withInitial { JenkinsRequestMode.BACKGROUND }
 
@@ -117,15 +126,14 @@ class JenkinsStatusClient(private val project: Project? = null) {
         private fun currentRequestMode(): JenkinsRequestMode = requestMode.get()
     }
 
-    private val maxArtifactCount = 500
-    private val maxArtifactBytes = 100L * 1024L * 1024L
     private val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
-    private val httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(10))
-        .cookieHandler(cookieManager)
-        .followRedirects(HttpClient.Redirect.NEVER)
-        .version(HttpClient.Version.HTTP_1_1)
-        .build()
+    private val httpClient = httpClientOverride
+        ?: HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .cookieHandler(cookieManager)
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .version(HttpClient.Version.HTTP_1_1)
+            .build()
 
     fun fetchLatestBuild(
         baseUrl: String,
@@ -434,14 +442,14 @@ class JenkinsStatusClient(private val project: Project? = null) {
         token: String,
         bodyHandler: HttpResponse.BodyHandler<T>,
     ): HttpResponse<T> {
-        var lastError: IOException? = null
         var authRecoveryTried = false
-        repeat(3) { attempt ->
+        var attempt = 0
+        while (true) {
             try {
                 var response = httpClient.send(request(url, username, token), bodyHandler)
                 if (!authRecoveryTried && shouldTriggerInteractiveFallback(response, url)) {
                     authRecoveryTried = true
-                    val recovered = recoverAuthentication(url)
+                    val recovered = authenticationRecoveryOverride?.invoke(url) ?: recoverAuthentication(url)
                     if (recovered) {
                         response = httpClient.send(request(url, username, token), bodyHandler)
                         if (response.statusCode() !in setOf(401, 403) && !isSecurityRedirect(response)) {
@@ -454,21 +462,21 @@ class JenkinsStatusClient(private val project: Project? = null) {
                 if (shouldRetry(response) && attempt < 2) {
                     warmSession(url, username, token)
                     sleepBeforeRetry(attempt)
-                    return@repeat
+                    attempt += 1
+                    continue
                 }
                 if (currentRequestMode() == JenkinsRequestMode.BACKGROUND && response.statusCode() in setOf(401, 403)) {
                     throw JenkinsAuthenticationExpiredException(rootUrl(url))
                 }
                 return response
             } catch (error: IOException) {
-                lastError = error
                 if (attempt == 2 || !isTransientNetworkError(error)) {
                     throw error
                 }
                 sleepBeforeRetry(attempt)
+                attempt += 1
             }
         }
-        throw lastError ?: IOException("Jenkins request failed")
     }
 
     private fun shouldRetry(response: HttpResponse<*>): Boolean {
@@ -505,7 +513,8 @@ class JenkinsStatusClient(private val project: Project? = null) {
         val base = rootUrl(url)
         val mode = currentRequestMode()
         CiStatusDebugLog.keycloak(project, "recover-auth start mode=$mode base=$base url=$url")
-        val autoLoginRecovered = service.attemptAutoLoginInBackground(base)
+        val autoLoginRecovered = autoLoginAttemptOverride?.invoke(service, base)
+            ?: service.attemptAutoLoginInBackground(base)
         CiStatusDebugLog.keycloak(project, "recover-auth auto-login result=$autoLoginRecovered mode=$mode")
         if (autoLoginRecovered) {
             return true
@@ -513,7 +522,7 @@ class JenkinsStatusClient(private val project: Project? = null) {
         return when (mode) {
             JenkinsRequestMode.MANUAL -> {
                 CiStatusDebugLog.keycloak(project, "recover-auth opening interactive login for manual request")
-                service.ensureLoggedIn(base)
+                interactiveLoginOverride?.invoke(service, base) ?: service.ensureLoggedIn(base)
             }
             JenkinsRequestMode.BACKGROUND -> {
                 CiStatusDebugLog.keycloak(project, "recover-auth background request: interactive login deferred to notification action")
@@ -538,7 +547,7 @@ class JenkinsStatusClient(private val project: Project? = null) {
     }
 
     private fun sleepBeforeRetry(attempt: Int) {
-        Thread.sleep(250L * (attempt + 1))
+        (sleepOverride ?: Thread::sleep)(250L * (attempt + 1))
     }
 
     private fun diagnosticRequest(name: String, url: String, username: String, token: String): JenkinsDiagnosticStep {

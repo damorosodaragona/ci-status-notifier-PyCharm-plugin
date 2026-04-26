@@ -712,35 +712,39 @@ private class JenkinsDashboardPanel(
         updateToolWindowIcon(null)
         buildMeta.text = "Monitoring paused while Jenkins authentication is checked."
         ApplicationManager.getApplication().executeOnPooledThread {
-            CiStatusDebugLog.keycloak(project, "auth-notify ui check start source=background title=$title")
-            val recovered = recoverAuthenticationFromUiFallback(interactiveOnFailure = false)
-            if (recovered) {
-                CiStatusDebugLog.keycloak(project, "auth-notify ui SKIP: auto-login/recover succeeded source=background title=$title")
-                authenticationPaused = false
-                ApplicationManager.getApplication().invokeLater {
-                    if (!project.isDisposed) {
-                        refresh(manual = false)
-                    }
-                }
-            } else {
-                CiStatusDebugLog.keycloak(project, "auth-notify ui SHOW: auto-login/recover failed source=background title=$title")
-                ApplicationManager.getApplication().invokeLater {
-                    if (!project.isDisposed) {
-                        summary.text = "Monitoring paused - Jenkins authentication expired."
-                        buildMeta.text = "Monitoring paused until you login again."
-                        CiStatusNotifier(project).notifyJenkinsAuthenticationExpired {
-                            ApplicationManager.getApplication().executeOnPooledThread {
-                                CiStatusDebugLog.keycloak(project, "auth-notify ui CLICK: retry auth with interactive fallback source=background title=$title")
-                                val loginRecovered = recoverAuthenticationFromUiFallback(interactiveOnFailure = true)
-                                if (loginRecovered) {
-                                    authenticationPaused = false
-                                    ApplicationManager.getApplication().invokeLater {
-                                        if (!project.isDisposed) {
-                                            refresh(manual = false)
+            AuthNotificationCoordinator.notifyOnlyAfterAutoLoginFailure(
+                source = "tool-window-background title=$title",
+                attemptAutoLogin = { recoverAuthenticationFromUiFallback(interactiveOnFailure = false) },
+                showNotification = {
+                    ApplicationManager.getApplication().invokeLater {
+                        if (!project.isDisposed) {
+                            summary.text = "Monitoring paused - Jenkins authentication expired."
+                            buildMeta.text = "Monitoring paused until you login again."
+                            CiStatusNotifier(project).notifyJenkinsAuthenticationExpired(
+                                AuthNotificationCoordinator.loginAction(
+                                    source = "tool-window-background title=$title",
+                                    recoverWithInteractiveFallback = { recoverAuthenticationFromUiFallback(interactiveOnFailure = true) },
+                                    onRecovered = {
+                                        authenticationPaused = false
+                                        ApplicationManager.getApplication().invokeLater {
+                                            if (!project.isDisposed) {
+                                                refresh(manual = false)
+                                            }
                                         }
-                                    }
-                                }
-                            }
+                                    },
+                                    log = { message -> CiStatusDebugLog.keycloak(project, message) },
+                                ),
+                            )
+                        }
+                    }
+                },
+                log = { message -> CiStatusDebugLog.keycloak(project, message) },
+            ).also { decision ->
+                if (decision == AuthNotificationCoordinator.Decision.SkippedBecauseRecovered) {
+                    authenticationPaused = false
+                    ApplicationManager.getApplication().invokeLater {
+                        if (!project.isDisposed) {
+                            refresh(manual = false)
                         }
                     }
                 }

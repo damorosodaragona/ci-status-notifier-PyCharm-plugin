@@ -119,25 +119,29 @@ private class CiStatusWatcher(private val project: Project) : Disposable {
             heavyPollingActive = false
             trackedRunningBuildKey = null
             ApplicationManager.getApplication().executeOnPooledThread {
-                CiStatusDebugLog.keycloak(project, "auth-notify startup check start source=polling")
-                val recovered = recoverAuthenticationFromNotification(interactiveOnFailure = false)
-                if (recovered) {
-                    CiStatusDebugLog.keycloak(project, "auth-notify startup SKIP: auto-login/recover succeeded source=polling")
-                    authenticationPaused = false
-                    nextLightPollAtMillis = 0L
-                    requestToolWindowRefresh("keycloak-auto-login")
-                } else {
-                    CiStatusDebugLog.keycloak(project, "auth-notify startup SHOW: auto-login/recover failed source=polling")
-                    notifier.notifyJenkinsAuthenticationExpired {
-                        ApplicationManager.getApplication().executeOnPooledThread {
-                            CiStatusDebugLog.keycloak(project, "auth-notify startup CLICK: retry auth with interactive fallback")
-                            val loginRecovered = recoverAuthenticationFromNotification(interactiveOnFailure = true)
-                            if (loginRecovered) {
-                                authenticationPaused = false
-                                nextLightPollAtMillis = 0L
-                                requestToolWindowRefresh("keycloak-login")
-                            }
-                        }
+                AuthNotificationCoordinator.notifyOnlyAfterAutoLoginFailure(
+                    source = "startup-polling",
+                    attemptAutoLogin = { recoverAuthenticationFromNotification(interactiveOnFailure = false) },
+                    showNotification = {
+                        notifier.notifyJenkinsAuthenticationExpired(
+                            AuthNotificationCoordinator.loginAction(
+                                source = "startup-polling",
+                                recoverWithInteractiveFallback = { recoverAuthenticationFromNotification(interactiveOnFailure = true) },
+                                onRecovered = {
+                                    authenticationPaused = false
+                                    nextLightPollAtMillis = 0L
+                                    requestToolWindowRefresh("keycloak-login")
+                                },
+                                log = { message -> CiStatusDebugLog.keycloak(project, message) },
+                            ),
+                        )
+                    },
+                    log = { message -> CiStatusDebugLog.keycloak(project, message) },
+                ).also { decision ->
+                    if (decision == AuthNotificationCoordinator.Decision.SkippedBecauseRecovered) {
+                        authenticationPaused = false
+                        nextLightPollAtMillis = 0L
+                        requestToolWindowRefresh("keycloak-auto-login")
                     }
                 }
             }

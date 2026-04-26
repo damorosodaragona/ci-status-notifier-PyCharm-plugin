@@ -1,5 +1,6 @@
 package com.damorosodaragona.jenkinsnotifier
 
+import com.intellij.credentialStore.CredentialAttributes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -108,4 +109,72 @@ class CiStatusSettingsTest {
         assertTrue(settings.experimentalKeycloakDebug)
         assertEquals("dario", settings.keycloakWebUsername)
     }
+
+    @Test
+    fun `boolean option setters update persisted state`() {
+        val settings = CiStatusSettings()
+
+        settings.enabled = false
+        settings.notifyPending = true
+        settings.notifySuccess = false
+        settings.notifyFailure = false
+        settings.experimentalKeycloakInteractiveFallback = true
+        settings.experimentalKeycloakAutoLogin = true
+        settings.experimentalKeycloakDebug = true
+
+        val state = settings.getState()
+        assertFalse(state.enabled)
+        assertTrue(state.notifyPending)
+        assertFalse(state.notifySuccess)
+        assertFalse(state.notifyFailure)
+        assertTrue(state.experimentalKeycloakInteractiveFallback)
+        assertTrue(state.experimentalKeycloakAutoLogin)
+        assertTrue(state.experimentalKeycloakDebug)
+    }
+
+    @Test
+    fun `credential keys use normalized current plugin identity`() {
+        val settings = CiStatusSettings()
+        settings.repository = " owner/repo "
+        settings.jenkinsBaseUrl = " https://jenkins.example.org/ "
+        settings.jenkinsUsername = " robot "
+        settings.keycloakWebUsername = " dario "
+
+        assertEquals(
+            "JenkinsCiNotifier:owner/repo",
+            settings.credentialServiceNameForTest("credentialAttributes"),
+        )
+        assertEquals(
+            "JenkinsCiNotifier:Jenkins:https://jenkins.example.org:robot",
+            settings.credentialServiceNameForTest("jenkinsCredentialAttributes"),
+        )
+        assertEquals(
+            "JenkinsCiNotifier:Keycloak:https://jenkins.example.org:dario",
+            settings.credentialServiceNameForTest("keycloakCredentialAttributes"),
+        )
+    }
+
+    @Test
+    fun `credential keys use default segments when fields are blank`() {
+        val settings = CiStatusSettings()
+
+        assertEquals(
+            "JenkinsCiNotifier:default",
+            settings.credentialServiceNameForTest("credentialAttributes"),
+        )
+        assertEquals(
+            "JenkinsCiNotifier:Jenkins:default:default",
+            settings.credentialServiceNameForTest("jenkinsCredentialAttributes"),
+        )
+        assertEquals(
+            "JenkinsCiNotifier:Keycloak:default:default",
+            settings.credentialServiceNameForTest("keycloakCredentialAttributes"),
+        )
+    }
+}
+
+private fun CiStatusSettings.credentialServiceNameForTest(methodName: String): String {
+    val method = CiStatusSettings::class.java.getDeclaredMethod(methodName)
+    method.isAccessible = true
+    return (method.invoke(this) as CredentialAttributes).serviceName
 }
