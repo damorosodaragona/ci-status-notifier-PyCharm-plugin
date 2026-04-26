@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.1.21"
@@ -26,12 +28,7 @@ dependencies {
 
 
     intellijPlatform {
-        val localPyCharm = file("/Applications/PyCharm.app")
-        if (localPyCharm.exists() && !providers.environmentVariable("CI").isPresent) {
-            local(localPyCharm.absolutePath)
-        } else {
-            pycharmCommunity(providers.gradleProperty("platformVersion"))
-        }
+        pycharmCommunity(providers.gradleProperty("platformVersion"))
         bundledPlugin("Git4Idea")
     }
 }
@@ -46,7 +43,19 @@ intellijPlatform {
             sinceBuild = "233"
         }
     }
+
+    pluginVerification {
+        ides {
+            // pre-2025.3: ancora separati
+            create(IntelliJPlatformType.PyCharmCommunity, "2023.3.7")
+            create(IntelliJPlatformType.PyCharmProfessional, "2023.3.7")
+
+            // 2025.3+: PyCharm unificato
+            create(IntelliJPlatformType.PyCharmProfessional, "2026.1")
+        }
+    }
 }
+
 
 tasks {
     patchPluginXml {
