@@ -7,9 +7,7 @@ on:
   push:
     branches:
       - main
-      - 'test/**'
-      - 'feature/**'
-      - 'fix/**'
+      - '**'
 
 permissions:
   contents: read
@@ -41,8 +39,8 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: chmod +x ./gradlew
 
-      - name: Run tests
-        run: ./gradlew test
+      - name: Run tests and verify plugin compatibility
+        run: ./gradlew clean test verifyPlugin
 
       - name: Upload test report
         if: always()
