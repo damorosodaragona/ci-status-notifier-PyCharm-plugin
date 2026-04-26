@@ -710,11 +710,37 @@ private class JenkinsDashboardPanel(
         authenticationPaused = true
         summary.text = "Monitoring paused - Jenkins authentication expired."
         updateToolWindowIcon(null)
-        buildMeta.text = "Monitoring paused until you login again."
-        CiStatusNotifier(project).notifyJenkinsAuthenticationExpired {
-            ApplicationManager.getApplication().executeOnPooledThread {
-                val recovered = KeycloakSessionService.getInstance(project).ensureLoggedIn(settings.jenkinsBaseUrl)
-                if (recovered) {
+        buildMeta.text = "Monitoring paused while Jenkins authentication is checked."
+        ApplicationManager.getApplication().executeOnPooledThread {
+            AuthNotificationCoordinator.notifyOnlyAfterAutoLoginFailure(
+                source = "tool-window-background title=$title",
+                attemptAutoLogin = { recoverAuthenticationFromUiFallback(interactiveOnFailure = false) },
+                showNotification = {
+                    ApplicationManager.getApplication().invokeLater {
+                        if (!project.isDisposed) {
+                            summary.text = "Monitoring paused - Jenkins authentication expired."
+                            buildMeta.text = "Monitoring paused until you login again."
+                            CiStatusNotifier(project).notifyJenkinsAuthenticationExpired(
+                                AuthNotificationCoordinator.loginAction(
+                                    source = "tool-window-background title=$title",
+                                    recoverWithInteractiveFallback = { recoverAuthenticationFromUiFallback(interactiveOnFailure = true) },
+                                    onRecovered = {
+                                        authenticationPaused = false
+                                        ApplicationManager.getApplication().invokeLater {
+                                            if (!project.isDisposed) {
+                                                refresh(manual = false)
+                                            }
+                                        }
+                                    },
+                                    log = { message -> CiStatusDebugLog.keycloak(project, message) },
+                                ),
+                            )
+                        }
+                    }
+                },
+                log = { message -> CiStatusDebugLog.keycloak(project, message) },
+            ).also { decision ->
+                if (decision == AuthNotificationCoordinator.Decision.SkippedBecauseRecovered) {
                     authenticationPaused = false
                     ApplicationManager.getApplication().invokeLater {
                         if (!project.isDisposed) {
@@ -726,10 +752,13 @@ private class JenkinsDashboardPanel(
         }
     }
 
+
     private fun handleManualAuthenticationExpired(title: String) {
         ApplicationManager.getApplication().executeOnPooledThread {
-            val recovered = KeycloakSessionService.getInstance(project).ensureLoggedIn(settings.jenkinsBaseUrl)
+            CiStatusDebugLog.keycloak(project, "auth-notify ui manual check start title=$title")
+            val recovered = recoverAuthenticationFromUiFallback(interactiveOnFailure = true)
             if (recovered) {
+                CiStatusDebugLog.keycloak(project, "auth-notify ui manual recovered title=$title")
                 authenticationPaused = false
                 ApplicationManager.getApplication().invokeLater {
                     if (!project.isDisposed) {
@@ -737,6 +766,7 @@ private class JenkinsDashboardPanel(
                     }
                 }
             } else {
+                CiStatusDebugLog.keycloak(project, "auth-notify ui manual failed title=$title")
                 ApplicationManager.getApplication().invokeLater {
                     if (!project.isDisposed) {
                         showError(title, JenkinsAuthenticationExpiredException(settings.jenkinsBaseUrl))
@@ -744,6 +774,23 @@ private class JenkinsDashboardPanel(
                 }
             }
         }
+    }
+
+
+    private fun recoverAuthenticationFromUiFallback(interactiveOnFailure: Boolean): Boolean {
+        val service = KeycloakSessionService.getInstance(project)
+        val base = settings.jenkinsBaseUrl
+        CiStatusDebugLog.keycloak(project, "ui-auth start interactiveOnFailure=$interactiveOnFailure base=$base")
+        val autoLoginRecovered = service.attemptAutoLoginInBackground(base)
+        CiStatusDebugLog.keycloak(project, "ui-auth auto-login result=$autoLoginRecovered interactiveOnFailure=$interactiveOnFailure")
+        if (autoLoginRecovered) {
+            return true
+        }
+        if (!interactiveOnFailure) {
+            return false
+        }
+        CiStatusDebugLog.keycloak(project, "ui-auth opening interactive login after auto-login failed")
+        return service.ensureLoggedIn(base)
     }
 
     override fun dispose() {

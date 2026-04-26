@@ -22,14 +22,15 @@ data class CommitStatus(
     val targetUrl: String?,
 )
 
-class GitHubStatusClient {
-    private val httpClient = HttpClient.newBuilder()
+class GitHubStatusClient(
+    private val httpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
-        .build()
-
+        .build(),
+    private val apiBaseUrl: String = "https://api.github.com",
+) {
     fun fetch(repository: String, sha: String, token: String): CommitStatusSummary {
         val requestBuilder = HttpRequest.newBuilder()
-            .uri(URI.create("https://api.github.com/repos/$repository/commits/$sha/status"))
+            .uri(URI.create("${apiBaseUrl.trimEnd('/')}/repos/$repository/commits/$sha/status"))
             .timeout(Duration.ofSeconds(20))
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "jenkins-notifier")

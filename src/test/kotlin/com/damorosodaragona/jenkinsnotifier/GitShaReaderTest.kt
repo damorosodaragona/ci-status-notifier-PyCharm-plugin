@@ -2,6 +2,7 @@ package com.damorosodaragona.jenkinsnotifier
 
 import com.intellij.openapi.project.Project
 import java.lang.reflect.Proxy
+import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.writeText
@@ -12,6 +13,56 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GitShaReaderTest {
+    @Test
+    fun `currentSha returns null when git output is not a 40 char hash`() {
+        val repo = createGitRepo()
+        val reader = GitShaReader(
+            project = projectWithBasePath(repo),
+            processFactory = { _, _ -> fakeProcess(waitCompleted = true, exitCode = 0, output = "not-a-sha") },
+        )
+
+        assertNull(reader.currentSha())
+    }
+
+    @Test
+    fun `currentBranch falls back and returns null for detached HEAD`() {
+        val repo = createGitRepo()
+        var calls = 0
+        val reader = GitShaReader(
+            project = projectWithBasePath(repo),
+            processFactory = { _, _ ->
+                calls += 1
+                when (calls) {
+                    1 -> fakeProcess(waitCompleted = true, exitCode = 0, output = "")
+                    else -> fakeProcess(waitCompleted = true, exitCode = 0, output = "HEAD")
+                }
+            },
+        )
+
+        assertNull(reader.currentBranch())
+    }
+
+    @Test
+    fun `runGit timeout destroys process and returns null`() {
+        val repo = createGitRepo()
+        var destroyed = false
+        val reader = GitShaReader(
+            project = projectWithBasePath(repo),
+            processFactory = { _, _ ->
+                fakeProcess(
+                    waitCompleted = false,
+                    exitCode = 0,
+                    output = "",
+                    onDestroyForcibly = { destroyed = true },
+                )
+            },
+            waitTimeoutSeconds = 0,
+        )
+
+        assertNull(reader.currentSha())
+        assertTrue(destroyed)
+    }
+
     @Test
     fun `currentSha returns the 40 character HEAD sha`() {
         val repo = createGitRepo()
@@ -83,12 +134,56 @@ class GitShaReaderTest {
     }
 
     @Test
+    fun `outgoingCommitCount returns null when no upstream is configured`() {
+        val repo = createGitRepo(branch = "main")
+        val reader = GitShaReader(projectWithBasePath(repo))
+
+        assertNull(reader.outgoingCommitCount())
+    }
+
+    @Test
     fun `reader returns null when project has no base path`() {
         val reader = GitShaReader(projectWithBasePath(null))
 
         assertNull(reader.currentSha())
         assertNull(reader.currentBranch())
         assertNull(reader.outgoingCommitCount())
+        assertNull(reader.originRepository())
+        assertNull(reader.originBranchSha())
+    }
+
+
+    @Test
+    fun `originBranchSha returns remote sha for current branch`() {
+        val remote = Files.createTempDirectory("git-remote-test")
+        git(remote, "init", "--bare")
+
+        val repo = createGitRepo(branch = "main")
+        git(repo, "remote", "add", "origin", remote.toUri().toString())
+        git(repo, "push", "-u", "origin", "main")
+
+        val reader = GitShaReader(projectWithBasePath(repo))
+
+        assertEquals(reader.currentSha(), reader.originBranchSha())
+    }
+
+    @Test
+    fun `originBranchSha returns null when origin has no matching branch`() {
+        val remote = Files.createTempDirectory("git-remote-test")
+        git(remote, "init", "--bare")
+
+        val repo = createGitRepo(branch = "feature/local-only")
+        git(repo, "remote", "add", "origin", remote.toUri().toString())
+        val reader = GitShaReader(projectWithBasePath(repo))
+
+        assertNull(reader.originBranchSha())
+    }
+
+    @Test
+    fun `origin helpers return null when origin remote is missing`() {
+        val repo = createGitRepo(branch = "main")
+        val reader = GitShaReader(projectWithBasePath(repo))
+
         assertNull(reader.originRepository())
         assertNull(reader.originBranchSha())
     }
@@ -128,5 +223,27 @@ class GitShaReaderTest {
                 else -> null
             }
         } as Project
+    }
+
+    private fun fakeProcess(
+        waitCompleted: Boolean,
+        exitCode: Int,
+        output: String,
+        onDestroyForcibly: (() -> Unit)? = null,
+    ): Process {
+        return object : Process() {
+            override fun getOutputStream() = throw UnsupportedOperationException("Not needed in tests")
+            override fun getInputStream() = ByteArrayInputStream(output.toByteArray())
+            override fun getErrorStream() = ByteArrayInputStream(ByteArray(0))
+            override fun waitFor(): Int = exitCode
+            override fun waitFor(timeout: Long, unit: java.util.concurrent.TimeUnit): Boolean = waitCompleted
+            override fun exitValue(): Int = exitCode
+            override fun destroy() {}
+            override fun destroyForcibly(): Process {
+                onDestroyForcibly?.invoke()
+                return this
+            }
+            override fun isAlive(): Boolean = !waitCompleted
+        }
     }
 }

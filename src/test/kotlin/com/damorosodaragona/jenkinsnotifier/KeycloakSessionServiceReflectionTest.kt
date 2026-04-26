@@ -27,8 +27,7 @@ class KeycloakSessionServiceReflectionTest {
         assertFalse(service.jsStringForTest("a\rb").contains("\r"))
     }
 
-    private fun projectWithServiceStub(): Project {
-        val settings = CiStatusSettings()
+    private fun projectWithServiceStub(settings: CiStatusSettings = CiStatusSettings()): Project {
         return Proxy.newProxyInstance(
             Project::class.java.classLoader,
             arrayOf(Project::class.java),
