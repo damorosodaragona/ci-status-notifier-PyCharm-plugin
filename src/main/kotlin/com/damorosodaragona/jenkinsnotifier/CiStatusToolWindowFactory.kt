@@ -121,7 +121,7 @@ private class JenkinsDashboardPanel(
         Path.of(PathManager.getSystemPath(), "jenkins-ci-notifier", "jenkins-artifacts")
 
     private val refreshButton = iconToolbarButton("Refresh", AllIcons.Actions.Refresh)
-    private val testJenkinsButton = iconToolbarButton("Test Jenkins", AllIcons.Actions.Lightning)
+//    private val testJenkinsButton = iconToolbarButton("Test Jenkins", AllIcons.Actions.Lightning)
     private val openJenkinsButton = iconToolbarButton("Open Jenkins", AllIcons.General.Web)
     private val openArtifactButton = iconToolbarButton("View on Jenkins", AllIcons.General.OpenDisk)
     private val closePreviewButton = toolbarButton("", AllIcons.Actions.Close)
@@ -177,7 +177,7 @@ private class JenkinsDashboardPanel(
 
     private fun buildComponent(): JComponent {
         refreshButton.addActionListener { refresh(manual = true) }
-        testJenkinsButton.addActionListener { testJenkinsConnection() }
+//        testJenkinsButton.addActionListener { testJenkinsConnection() }
         openJenkinsButton.addActionListener { latestBuild?.url?.let(BrowserUtil::browse) }
         openArtifactButton.addActionListener { selectedArtifact()?.url?.let(BrowserUtil::browse) }
 
@@ -214,11 +214,10 @@ private class JenkinsDashboardPanel(
         val actions = OverflowActionsPanel(
             buttons = listOf(
                 refreshButton,
-                testJenkinsButton,
                 openJenkinsButton,
+                openArtifactButton
             ),
             overflowButton = moreButton,
-            alwaysInOverflow = listOf(openArtifactButton),
         ).apply {
             isOpaque = false
             minimumSize = Dimension(30, 32)
@@ -1529,7 +1528,6 @@ private class JenkinsDashboardPanel(
     private class OverflowActionsPanel(
         private val buttons: List<JButton>,
         private val overflowButton: JButton,
-        private val alwaysInOverflow: List<JButton> = emptyList(),
     ) : JPanel(null) {
         private var hiddenButtons: List<JButton> = emptyList()
 
@@ -1538,9 +1536,8 @@ private class JenkinsDashboardPanel(
 
             overflowButton.addActionListener {
                 val menu = JPopupMenu()
-                val menuButtons = hiddenButtons + alwaysInOverflow
 
-                menuButtons.forEach { button ->
+                hiddenButtons.forEach { button ->
                     val label = button.text.takeIf { it.isNotBlank() }
                         ?: button.toolTipText
                         ?: "Action"
@@ -1586,7 +1583,6 @@ private class JenkinsDashboardPanel(
             val gap = 6
             val visible = buttons.toMutableList()
             val hidden = mutableListOf<JButton>()
-            val needsOverflow = alwaysInOverflow.isNotEmpty()
 
             fun requiredWidth(items: List<JButton>, withOverflow: Boolean): Int {
                 val count = items.size + if (withOverflow) 1 else 0
@@ -1600,12 +1596,12 @@ private class JenkinsDashboardPanel(
 
             while (
                 visible.isNotEmpty() &&
-                requiredWidth(visible, needsOverflow || hidden.isNotEmpty()) > availableWidth
+                requiredWidth(visible, hidden.isNotEmpty()) > availableWidth
             ) {
                 hidden.add(0, visible.removeLast())
             }
 
-            if (hidden.isNotEmpty() || needsOverflow) {
+            if (hidden.isNotEmpty()) {
                 while (
                     visible.isNotEmpty() &&
                     requiredWidth(visible, true) > availableWidth
@@ -1619,11 +1615,11 @@ private class JenkinsDashboardPanel(
             removeAll()
             visible.forEach { add(it) }
 
-            if (hidden.isNotEmpty() || needsOverflow) {
+            if (hidden.isNotEmpty()) {
                 add(overflowButton)
             }
 
-            overflowButton.isVisible = hidden.isNotEmpty() || needsOverflow
+            overflowButton.isVisible = hidden.isNotEmpty()
 
             revalidate()
             repaint()
