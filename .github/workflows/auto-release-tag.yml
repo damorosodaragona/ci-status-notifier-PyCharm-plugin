@@ -37,8 +37,9 @@ jobs:
             exit 1
           fi
 
-          RELEASE_VALUE=$(echo "$RELEASE_LINE" | sed -E 's/^Release:[[:space:]]*//I' | xargs)
-
+          RELEASE_VALUE=$(echo "$RELEASE_LINE" | sed -E 's/^[Rr]elease:[[:space:]]*//; s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')
+          echo "RELEASE_LINE=[$RELEASE_LINE]"
+          echo "RELEASE_VALUE=[$RELEASE_VALUE]"
           git fetch --tags
 
           if [[ "$RELEASE_VALUE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
