@@ -52,7 +52,40 @@ class CiStatusConfigurable(
     private val keycloakWebUsername = JBTextField()
     private val keycloakWebPassword = JBPasswordField()
     private val testJenkinsButton = JButton("Test Jenkins connection")
+
+    private val githubSettingsPanel = FormBuilder.createFormBuilder()
+        .addLabeledComponent("GitHub repository", repository)
+        .addLabeledComponent("GitHub token", token)
+        .addComponent(JBLabel("GitHub repository format: owner/name. Tokens are stored in the JetBrains Password Safe."))
+        .panel
+
+    private val jenkinsSettingsPanel = FormBuilder.createFormBuilder()
+        .addLabeledComponent("Jenkins URL", jenkinsBaseUrl)
+        .addLabeledComponent("Jenkins scan root", jenkinsJobPath)
+        .addLabeledComponent("Jenkins username", jenkinsUsername)
+        .addLabeledComponent("Jenkins API token", jenkinsToken)
+        .addComponent(testJenkinsButton)
+        .addComponent(JBLabel("Jenkins scan root is optional. Leave blank to scan from the Jenkins root, or set a raw (job/Folder/job/project) or slash-separated (Folder/project) path to narrow the scan. Root scans require Jenkins permissions that allow reading the global Jenkins root."))
+        .addComponent(JBLabel("This Jenkins instance may require an active Keycloak (OIDC) session for API access."))
+        .addComponent(JBLabel("Recommended: enable API access without OIDC session on the Jenkins server."))
+        .addComponent(JBLabel("Otherwise, you can try the experimental Keycloak auto-login feature."))
+        .addComponent(experimentalKeycloakInteractiveFallback)
+        .addComponent(experimentalKeycloakAutoLogin)
+        .addComponent(experimentalKeycloakDebug)
+        .addLabeledComponent("Keycloak web username", keycloakWebUsername)
+        .addLabeledComponent("Keycloak web password", keycloakWebPassword)
+        .panel
+
     private var panel: JPanel? = null
+
+    init {
+        testJenkinsButton.addActionListener {
+            testJenkinsConnectionFromSettings()
+        }
+        provider.addActionListener {
+            updateProviderSettingsVisibility()
+        }
+    }
 
     override fun getDisplayName(): String = "Jenkins CI Notifier"
 
@@ -106,29 +139,11 @@ class CiStatusConfigurable(
     }
 
     override fun createComponent(): JComponent {
-        testJenkinsButton.addActionListener {
-            testJenkinsConnectionFromSettings()
-        }
         panel = FormBuilder.createFormBuilder()
             .addComponent(enabled)
             .addLabeledComponent("Provider", provider)
-            .addLabeledComponent("GitHub repository", repository)
-            .addLabeledComponent("GitHub token", token)
-            .addComponent(JBLabel("GitHub repository format: owner/name. Tokens are stored in the JetBrains Password Safe."))
-            .addLabeledComponent("Jenkins URL", jenkinsBaseUrl)
-            .addLabeledComponent("Jenkins scan root", jenkinsJobPath)
-            .addLabeledComponent("Jenkins username", jenkinsUsername)
-            .addLabeledComponent("Jenkins API token", jenkinsToken)
-            .addComponent(testJenkinsButton)
-            .addComponent(JBLabel("Jenkins scan root is optional. Leave blank to scan from the Jenkins root, or set a raw (job/Folder/job/project) or slash-separated (Folder/project) path to narrow the scan. Root scans require Jenkins permissions that allow reading the global Jenkins root."))
-            .addComponent(JBLabel("This Jenkins instance may require an active Keycloak (OIDC) session for API access."))
-            .addComponent(JBLabel("Recommended: enable API access without OIDC session on the Jenkins server."))
-            .addComponent(JBLabel("Otherwise, you can try the experimental Keycloak auto-login feature."))
-            .addComponent(experimentalKeycloakInteractiveFallback)
-            .addComponent(experimentalKeycloakAutoLogin)
-            .addComponent(experimentalKeycloakDebug)
-            .addLabeledComponent("Keycloak web username", keycloakWebUsername)
-            .addLabeledComponent("Keycloak web password", keycloakWebPassword)
+            .addComponent(githubSettingsPanel)
+            .addComponent(jenkinsSettingsPanel)
             .addLabeledComponent("Poll interval seconds", pollInterval)
             .addComponent(notifyPending)
             .addComponent(notifySuccess)
@@ -137,6 +152,14 @@ class CiStatusConfigurable(
             .panel
         reset()
         return panel!!
+    }
+
+    private fun updateProviderSettingsVisibility() {
+        val selectedProvider = provider.selectedItem?.toString() ?: "github"
+        githubSettingsPanel.isVisible = selectedProvider == "github"
+        jenkinsSettingsPanel.isVisible = selectedProvider == "jenkins"
+        panel?.revalidate()
+        panel?.repaint()
     }
 
     override fun isModified(): Boolean {
@@ -197,5 +220,6 @@ class CiStatusConfigurable(
         notifyPending.isSelected = settings.notifyPending
         notifySuccess.isSelected = settings.notifySuccess
         notifyFailure.isSelected = settings.notifyFailure
+        updateProviderSettingsVisibility()
     }
 }

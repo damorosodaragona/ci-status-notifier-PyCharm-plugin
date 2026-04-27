@@ -6,37 +6,39 @@ import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextField
 import java.lang.reflect.Proxy
+import javax.swing.JComponent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+
 class CiStatusConfigurableApplyResetTest {
 
     @Test
-    fun `invalid poll interval is saved as default and restored`() = withTestPasswordSafe {
+    fun `provider selection shows only matching provider settings`() = withTestPasswordSafe {
         val settings = CiStatusSettings().apply {
-            pollIntervalSeconds = 30
+            provider = "jenkins"
         }
         val project = projectWithSettings(settings)
 
         val configurable = CiStatusConfigurable(project)
         configurable.createComponent()
 
-        configurable.textField("pollInterval").text = "abc"
+        assertFalse(configurable.component("githubSettingsPanel").isVisible)
+        assertTrue(configurable.component("jenkinsSettingsPanel").isVisible)
 
-        assertTrue(configurable.isModified())
+        configurable.comboBox("provider").selectedItem = "github"
 
-        configurable.apply()
+        assertTrue(configurable.component("githubSettingsPanel").isVisible)
+        assertFalse(configurable.component("jenkinsSettingsPanel").isVisible)
 
-        assertEquals(60, settings.pollIntervalSeconds)
+        configurable.comboBox("provider").selectedItem = "jenkins"
 
-        val reloadedConfigurable = CiStatusConfigurable(project)
-        reloadedConfigurable.createComponent()
-
-        assertEquals("60", reloadedConfigurable.textField("pollInterval").text)
-        assertFalse(reloadedConfigurable.isModified())
+        assertFalse(configurable.component("githubSettingsPanel").isVisible)
+        assertTrue(configurable.component("jenkinsSettingsPanel").isVisible)
     }
+
 
     @Test
     fun `filled settings form is saved and restored`() = withTestPasswordSafe {
@@ -137,14 +139,15 @@ internal fun projectWithSettings(settings: CiStatusSettings): Project {
     } as Project
 }
 
-
-
 @Suppress("UNCHECKED_CAST")
 internal fun <T> CiStatusConfigurable.privateField(name: String): T {
     val field = CiStatusConfigurable::class.java.getDeclaredField(name)
     field.isAccessible = true
     return field.get(this) as T
 }
+
+internal fun CiStatusConfigurable.component(name: String): JComponent =
+    privateField(name)
 
 internal fun CiStatusConfigurable.textField(name: String): JBTextField =
     privateField(name)
