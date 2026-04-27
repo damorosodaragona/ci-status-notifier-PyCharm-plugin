@@ -52,3 +52,21 @@ jobs:
             build/reports/tests/test/
             build/test-results/test/
           if-no-files-found: ignore
+
+      - name: Smoke test summary
+        if: always()
+        run: |
+          echo "## Controlled smoke tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Gradle HTML report is available in the artifact \`smoke-test-reports\`." >> $GITHUB_STEP_SUMMARY
+          echo "- JUnit XML results are available in \`build/test-results/test/\`." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f build/test-results/test/TEST-com.damorosodaragona.jenkinsnotifier.CiStatusConfigurableContainerSmokeTest.xml ]; then
+            echo "### Smoke test result file found" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`xml" >> $GITHUB_STEP_SUMMARY
+            grep -E "<testsuite|<failure|<error|<skipped" build/test-results/test/TEST-com.damorosodaragona.jenkinsnotifier.CiStatusConfigurableContainerSmokeTest.xml >> $GITHUB_STEP_SUMMARY || true
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Smoke test XML result file not found." >> $GITHUB_STEP_SUMMARY
+          fi
