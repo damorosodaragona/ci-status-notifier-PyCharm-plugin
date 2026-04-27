@@ -8,21 +8,31 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
+import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.ui.Messages
-import com.intellij.ui.components.JBScrollPane
-import java.awt.BorderLayout
-import java.awt.Dimension
-import java.awt.Font
-import javax.swing.JButton
-import javax.swing.JTextArea
-import javax.swing.border.EmptyBorder
 
-class CiStatusConfigurable(private val project: Project) : Configurable {
+class CiStatusConfigurable(
+    private val project: Project,
+) : Configurable {
+    internal constructor(
+        project: Project,
+        diagnosticsService: JenkinsDiagnosticsService,
+        diagnosticsUi: JenkinsDiagnosticsUi,
+        diagnosticsExecutor: JenkinsDiagnosticsExecutor,
+        branchProvider: JenkinsBranchProvider,
+    ) : this(project) {
+        this.diagnosticsService = diagnosticsService
+        this.diagnosticsUi = diagnosticsUi
+        this.diagnosticsExecutor = diagnosticsExecutor
+        this.branchProvider = branchProvider
+    }
+
     private val settings = CiStatusSettings.getInstance(project)
+    private var diagnosticsService: JenkinsDiagnosticsService = RealJenkinsDiagnosticsService(project)
+    private var diagnosticsUi: JenkinsDiagnosticsUi = DialogJenkinsDiagnosticsUi(project)
+    private var diagnosticsExecutor: JenkinsDiagnosticsExecutor = IntelliJDiagnosticsExecutor
+    private var branchProvider: JenkinsBranchProvider = RealJenkinsBranchProvider(project)
 
     private val enabled = JBCheckBox("Poll CI statuses")
     private val provider = ComboBox(arrayOf("github", "jenkins"))
@@ -42,9 +52,43 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
     private val keycloakWebUsername = JBTextField()
     private val keycloakWebPassword = JBPasswordField()
     private val testJenkinsButton = JButton("Test Jenkins connection")
+
+    private val githubSettingsPanel = FormBuilder.createFormBuilder()
+        .addLabeledComponent("GitHub repository", repository)
+        .addLabeledComponent("GitHub token", token)
+        .addComponent(JBLabel("GitHub repository format: owner/name. Tokens are stored in the JetBrains Password Safe."))
+        .panel
+
+    private val jenkinsSettingsPanel = FormBuilder.createFormBuilder()
+        .addLabeledComponent("Jenkins URL", jenkinsBaseUrl)
+        .addLabeledComponent("Jenkins scan root", jenkinsJobPath)
+        .addLabeledComponent("Jenkins username", jenkinsUsername)
+        .addLabeledComponent("Jenkins API token", jenkinsToken)
+        .addComponent(testJenkinsButton)
+        .addComponent(JBLabel("Jenkins scan root is optional. Leave blank to scan from the Jenkins root, or set a raw (job/Folder/job/project) or slash-separated (Folder/project) path to narrow the scan. Root scans require Jenkins permissions that allow reading the global Jenkins root."))
+        .addComponent(JBLabel("This Jenkins instance may require an active Keycloak (OIDC) session for API access."))
+        .addComponent(JBLabel("Recommended: enable API access without OIDC session on the Jenkins server."))
+        .addComponent(JBLabel("Otherwise, you can try the experimental Keycloak auto-login feature."))
+        .addComponent(experimentalKeycloakInteractiveFallback)
+        .addComponent(experimentalKeycloakAutoLogin)
+        .addComponent(experimentalKeycloakDebug)
+        .addLabeledComponent("Keycloak web username", keycloakWebUsername)
+        .addLabeledComponent("Keycloak web password", keycloakWebPassword)
+        .panel
+
     private var panel: JPanel? = null
 
+    init {
+        testJenkinsButton.addActionListener {
+            testJenkinsConnectionFromSettings()
+        }
+        provider.addActionListener {
+            updateProviderSettingsVisibility()
+        }
+    }
+
     override fun getDisplayName(): String = "Jenkins CI Notifier"
+
     private fun testJenkinsConnectionFromSettings() {
         val baseUrl = jenkinsBaseUrl.text.trim().trimEnd('/')
         val jobPath = jenkinsJobPath.text.trim().trim('/')
@@ -52,133 +96,54 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
         val apiToken = String(jenkinsToken.password)
 
         if (baseUrl.isBlank()) {
-            Messages.showWarningDialog(
-                project,
-                "Configure Jenkins URL before running diagnostics.",
-                "Jenkins Diagnostics",
-            )
+            diagnosticsUi.showMissingJenkinsUrl()
             return
         }
 
         testJenkinsButton.isEnabled = false
         testJenkinsButton.text = "Testing..."
 
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val client = JenkinsStatusClient(project)
-            val branch = GitShaReader(project).currentBranch()
-
+        diagnosticsExecutor.executeOnBackgroundThread {
+            val branch = branchProvider.currentBranch()
             val result = runCatching {
-                JenkinsStatusClient.withRequestMode(JenkinsRequestMode.MANUAL) {
-                    client.diagnose(
-                        baseUrl,
-                        jobPath,
-                        username,
-                        apiToken,
-                        branch,
-                    )
-                }
+                diagnosticsService.diagnose(
+                    JenkinsDiagnosticsRequest(
+                        baseUrl = baseUrl,
+                        jobPath = jobPath,
+                        username = username,
+                        apiToken = apiToken,
+                        preferredBranch = branch,
+                    ),
+                )
             }
 
-            ApplicationManager.getApplication().invokeLater {
+            diagnosticsExecutor.invokeLater {
                 testJenkinsButton.isEnabled = true
                 testJenkinsButton.text = "Test Jenkins connection"
 
                 result.onSuccess { steps ->
-                    showDiagnosticReport(
-                        steps = steps,
-                        usernamePresent = username.isNotBlank(),
-                        tokenPresent = apiToken.isNotBlank(),
+                    diagnosticsUi.showReport(
+                        buildJenkinsDiagnosticReport(
+                            steps = steps,
+                            usernamePresent = username.isNotBlank(),
+                            tokenPresent = apiToken.isNotBlank(),
+                        ),
                     )
                 }.onFailure { error ->
-                    Messages.showErrorDialog(
-                        project,
+                    diagnosticsUi.showError(
                         "Could not run Jenkins diagnostics:\n${error.message ?: error::class.java.simpleName}",
-                        "Jenkins Diagnostics",
                     )
                 }
-            }
-        }
-    }
-
-    private fun showDiagnosticReport(
-        steps: List<JenkinsDiagnosticStep>,
-        usernamePresent: Boolean,
-        tokenPresent: Boolean,
-    ) {
-        val report = buildString {
-            appendLine("Jenkins diagnostics")
-            appendLine("Username configured: ${if (usernamePresent) "yes" else "no"}")
-            appendLine("Token present in Password Safe: ${if (tokenPresent) "yes" else "no"}")
-            appendLine("Authorization header sent: ${if (usernamePresent && tokenPresent) "yes" else "no"}")
-            appendLine()
-
-            steps.forEach { step ->
-                appendLine("${if (step.ok) "OK" else "FAIL"} ${step.name}")
-                appendLine("URL: ${step.url}")
-                appendLine("Status: ${step.statusCode ?: "-"}")
-                appendLine("Auth header sent: ${if (step.authHeaderSent) "yes" else "no"}")
-                if (!step.location.isNullOrBlank()) appendLine("Redirect: ${step.location}")
-                if (!step.wwwAuthenticate.isNullOrBlank()) appendLine("WWW-Authenticate: ${step.wwwAuthenticate}")
-                if (!step.contentType.isNullOrBlank()) appendLine("Content-Type: ${step.contentType}")
-                if (!step.error.isNullOrBlank()) appendLine("Error: ${step.error}")
-                if (step.bodyPreview.isNotBlank()) appendLine("Body: ${step.bodyPreview}")
-                appendLine()
-            }
-        }
-
-        JenkinsDiagnosticsDialog(project, report).show()
-    }
-
-    private class JenkinsDiagnosticsDialog(
-        project: Project,
-        private val report: String,
-    ) : DialogWrapper(project) {
-
-        init {
-            title = "Jenkins Diagnostics"
-            init()
-        }
-
-        override fun createCenterPanel(): JComponent {
-            return JBScrollPane(
-                JTextArea(report).apply {
-                    isEditable = false
-                    lineWrap = true
-                    wrapStyleWord = true
-                    border = EmptyBorder(8, 8, 8, 8)
-                    font = Font(Font.MONOSPACED, Font.PLAIN, font.size)
-                },
-            ).apply {
-                preferredSize = Dimension(760, 500)
             }
         }
     }
 
     override fun createComponent(): JComponent {
-        testJenkinsButton.addActionListener {
-            testJenkinsConnectionFromSettings()
-        }
         panel = FormBuilder.createFormBuilder()
             .addComponent(enabled)
             .addLabeledComponent("Provider", provider)
-            .addLabeledComponent("GitHub repository", repository)
-            .addLabeledComponent("GitHub token", token)
-            .addComponent(JBLabel("GitHub repository format: owner/name. Tokens are stored in the JetBrains Password Safe."))
-            .addLabeledComponent("Jenkins URL", jenkinsBaseUrl)
-            .addLabeledComponent("Jenkins scan root", jenkinsJobPath)
-            .addLabeledComponent("Jenkins username", jenkinsUsername)
-            .addLabeledComponent("Jenkins API token", jenkinsToken)
-            .addLabeledComponent("Jenkins API token", jenkinsToken)
-            .addComponent(testJenkinsButton)
-            .addComponent(JBLabel("Jenkins scan root is optional. Leave blank to scan from the Jenkins root, or set a raw (job/Folder/job/project) or slash-separated (Folder/project) path to narrow the scan. Root scans require Jenkins permissions that allow reading the global Jenkins root."))
-            .addComponent(JBLabel("This Jenkins instance may require an active Keycloak (OIDC) session for API access."))
-            .addComponent(JBLabel("Recommended: enable API access without OIDC session on the Jenkins server."))
-            .addComponent(JBLabel("Otherwise, you can try the experimental Keycloak auto-login feature."))
-            .addComponent(experimentalKeycloakInteractiveFallback)
-            .addComponent(experimentalKeycloakAutoLogin)
-            .addComponent(experimentalKeycloakDebug)
-            .addLabeledComponent("Keycloak web username", keycloakWebUsername)
-            .addLabeledComponent("Keycloak web password", keycloakWebPassword)
+            .addComponent(githubSettingsPanel)
+            .addComponent(jenkinsSettingsPanel)
             .addLabeledComponent("Poll interval seconds", pollInterval)
             .addComponent(notifyPending)
             .addComponent(notifySuccess)
@@ -187,6 +152,14 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
             .panel
         reset()
         return panel!!
+    }
+
+    private fun updateProviderSettingsVisibility() {
+        val selectedProvider = provider.selectedItem?.toString() ?: "github"
+        githubSettingsPanel.isVisible = selectedProvider == "github"
+        jenkinsSettingsPanel.isVisible = selectedProvider == "jenkins"
+        panel?.revalidate()
+        panel?.repaint()
     }
 
     override fun isModified(): Boolean {
@@ -247,5 +220,6 @@ class CiStatusConfigurable(private val project: Project) : Configurable {
         notifyPending.isSelected = settings.notifyPending
         notifySuccess.isSelected = settings.notifySuccess
         notifyFailure.isSelected = settings.notifyFailure
+        updateProviderSettingsVisibility()
     }
 }

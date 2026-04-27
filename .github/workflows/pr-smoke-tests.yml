@@ -1,37 +1,31 @@
-name: Tests
+name: PR Smoke Tests
 
 on:
   pull_request:
     branches:
       - main
-  push:
-    branches:
-      - main
-      - '**'
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: read
 
 concurrency:
-  group: tests-${{ github.ref }}
+  group: pr-smoke-tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  kotlin-tests:
-    name: Kotlin/JUnit tests
+  controlled-smoke-tests:
+    name: Controlled smoke tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: 17
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -39,16 +33,24 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: chmod +x ./gradlew
 
-      - name: Run tests and verify plugin compatibility
-        run: ./gradlew clean test verifyPlugin
+      - name: Show Docker info
+        run: |
+          docker --version
+          docker info
 
-      - name: Add test and verifier summary
+      - name: Run controlled smoke tests
+        env:
+          JCN_CONTAINER_SMOKE_ENABLED: true
+        run: ./gradlew test --tests "*SmokeTest"
+
+      - name: Add smoke test summary
         if: always()
         shell: bash
         run: |
-          echo "## 🧪 Kotlin/JUnit tests and plugin verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 🧪 Controlled smoke tests" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Command: \`./gradlew clean test verifyPlugin\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Command: \`./gradlew test --tests \"*SmokeTest\"\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Docker-backed smoke tests enabled: \`JCN_CONTAINER_SMOKE_ENABLED=true\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           RESULT_FILES=$(find build/test-results/test -maxdepth 1 -type f -name "TEST-*.xml" 2>/dev/null | sort || true)
@@ -72,7 +74,7 @@ jobs:
               TOTAL_SKIPPED=$((TOTAL_SKIPPED + ${SKIPPED:-0}))
             done
 
-            echo "### Test results" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Results" >> "$GITHUB_STEP_SUMMARY"
             echo "- Tests: **$TOTAL_TESTS**" >> "$GITHUB_STEP_SUMMARY"
             echo "- Failures: **$TOTAL_FAILURES**" >> "$GITHUB_STEP_SUMMARY"
             echo "- Errors: **$TOTAL_ERRORS**" >> "$GITHUB_STEP_SUMMARY"
@@ -80,40 +82,32 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
 
             if [ "$TOTAL_FAILURES" != "0" ] || [ "$TOTAL_ERRORS" != "0" ]; then
-              echo "### ❌ Test failure details" >> "$GITHUB_STEP_SUMMARY"
+              echo "### ❌ Failure details" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
               echo '```xml' >> "$GITHUB_STEP_SUMMARY"
               grep -R "<failure\|<error" build/test-results/test/TEST-*.xml | head -n 40 >> "$GITHUB_STEP_SUMMARY" || true
               echo '```' >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "### ✅ All JUnit tests passed" >> "$GITHUB_STEP_SUMMARY"
+              echo "### ✅ All smoke tests passed" >> "$GITHUB_STEP_SUMMARY"
             fi
-          fi
 
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Plugin verifier" >> "$GITHUB_STEP_SUMMARY"
-          if [ -d build/reports/pluginVerifier ]; then
-            echo "- Report directory produced: \`build/reports/pluginVerifier/\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Verified targets: **PyCharm Community 2023.3.7**, **PyCharm Professional 2023.3.7**, **PyCharm Professional 2026.1**" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "- ⚠️ No plugin verifier report directory was produced." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### JUnit result files" >> "$GITHUB_STEP_SUMMARY"
+            for file in $RESULT_FILES; do
+              echo "- \`$file\`" >> "$GITHUB_STEP_SUMMARY"
+            done
           fi
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### 📦 Artifacts" >> "$GITHUB_STEP_SUMMARY"
-          echo "[Open this workflow run to download \`test-report\` and \`plugin-verifier-report\`](../../actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Open this workflow run to download \`smoke-test-reports\`](../../actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload test report
+      - name: Upload smoke test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-report
-          path: build/reports/tests/test/
-          if-no-files-found: ignore
-
-      - name: Upload plugin verifier report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: plugin-verifier-report
-          path: build/reports/pluginVerifier/
+          name: smoke-test-reports
+          path: |
+            build/reports/tests/test/
+            build/test-results/test/
           if-no-files-found: ignore

@@ -24,6 +24,7 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test-junit5"))
+    testImplementation("org.testcontainers:testcontainers:1.21.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
 

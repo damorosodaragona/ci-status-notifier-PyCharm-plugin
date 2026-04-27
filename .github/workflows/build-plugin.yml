@@ -45,3 +45,28 @@ jobs:
         with:
           files: build/distributions/*.zip
           generate_release_notes: true
+
+      - name: Add build summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## 📦 Build plugin" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Ref: \`${{ github.ref }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Event: \`${{ github.event_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if compgen -G "build/distributions/*.zip" > /dev/null; then
+            echo "### ✅ Plugin ZIP produced" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            for file in build/distributions/*.zip; do
+              size=$(du -h "$file" | cut -f1)
+              echo "- \`$file\` ($size)" >> "$GITHUB_STEP_SUMMARY"
+            done
+          else
+            echo "### ❌ No plugin ZIP was produced" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 📦 Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Open this workflow run to download \`ci-status-notifier-plugin\`](../../actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
