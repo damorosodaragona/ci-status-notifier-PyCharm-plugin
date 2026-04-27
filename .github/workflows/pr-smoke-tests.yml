@@ -47,31 +47,60 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "## Controlled smoke tests" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 🧪 Controlled smoke tests" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- Command: \`./gradlew test --tests \"*SmokeTest\"\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Docker-backed smoke tests enabled: \`JCN_CONTAINER_SMOKE_ENABLED=true\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ -d build/test-results/test ]; then
-            echo "### JUnit result files" >> "$GITHUB_STEP_SUMMARY"
+
+          RESULT_FILES=$(find build/test-results/test -maxdepth 1 -type f -name "TEST-*.xml" 2>/dev/null | sort || true)
+
+          if [ -z "$RESULT_FILES" ]; then
+            echo "⚠️ No JUnit result files found." >> "$GITHUB_STEP_SUMMARY"
+          else
+            TOTAL_TESTS=0
+            TOTAL_FAILURES=0
+            TOTAL_ERRORS=0
+            TOTAL_SKIPPED=0
+
+            for file in $RESULT_FILES; do
+              TESTS=$(grep -o 'tests="[0-9]*"' "$file" | head -n1 | cut -d'"' -f2)
+              FAILURES=$(grep -o 'failures="[0-9]*"' "$file" | head -n1 | cut -d'"' -f2)
+              ERRORS=$(grep -o 'errors="[0-9]*"' "$file" | head -n1 | cut -d'"' -f2)
+              SKIPPED=$(grep -o 'skipped="[0-9]*"' "$file" | head -n1 | cut -d'"' -f2)
+              TOTAL_TESTS=$((TOTAL_TESTS + ${TESTS:-0}))
+              TOTAL_FAILURES=$((TOTAL_FAILURES + ${FAILURES:-0}))
+              TOTAL_ERRORS=$((TOTAL_ERRORS + ${ERRORS:-0}))
+              TOTAL_SKIPPED=$((TOTAL_SKIPPED + ${SKIPPED:-0}))
+            done
+
+            echo "### Results" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Tests: **$TOTAL_TESTS**" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Failures: **$TOTAL_FAILURES**" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Errors: **$TOTAL_ERRORS**" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Skipped: **$TOTAL_SKIPPED**" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            find build/test-results/test -maxdepth 1 -type f -name "TEST-*.xml" | sort | while read -r file; do
+
+            if [ "$TOTAL_FAILURES" != "0" ] || [ "$TOTAL_ERRORS" != "0" ]; then
+              echo "### ❌ Failure details" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo '```xml' >> "$GITHUB_STEP_SUMMARY"
+              grep -R "<failure\|<error" build/test-results/test/TEST-*.xml | head -n 40 >> "$GITHUB_STEP_SUMMARY" || true
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "### ✅ All smoke tests passed" >> "$GITHUB_STEP_SUMMARY"
+            fi
+
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### JUnit result files" >> "$GITHUB_STEP_SUMMARY"
+            for file in $RESULT_FILES; do
               echo "- \`$file\`" >> "$GITHUB_STEP_SUMMARY"
             done
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No JUnit result directory was produced." >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
           fi
-          if grep -R "<failure\|<error" build/test-results/test/TEST-*.xml >/dev/null 2>&1; then
-            echo "### Failures / errors" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo '```xml' >> "$GITHUB_STEP_SUMMARY"
-            grep -R "<failure\|<error" build/test-results/test/TEST-*.xml | head -n 40 >> "$GITHUB_STEP_SUMMARY" || true
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "Gradle HTML report and JUnit XML files are uploaded as the \`smoke-test-reports\` artifact." >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 📦 Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Open this workflow run to download \`smoke-test-reports\`](../../actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload smoke test reports
         if: always()

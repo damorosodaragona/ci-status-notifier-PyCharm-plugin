@@ -46,39 +46,61 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "## Kotlin/JUnit tests and plugin verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 🧪 Kotlin/JUnit tests and plugin verification" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- Command: \`./gradlew clean test verifyPlugin\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ -d build/test-results/test ]; then
-            echo "### JUnit result files" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            find build/test-results/test -maxdepth 1 -type f -name "TEST-*.xml" | sort | while read -r file; do
-              echo "- \`$file\`" >> "$GITHUB_STEP_SUMMARY"
+
+          RESULT_FILES=$(find build/test-results/test -maxdepth 1 -type f -name "TEST-*.xml" 2>/dev/null | sort || true)
+
+          if [ -z "$RESULT_FILES" ]; then
+            echo "⚠️ No JUnit result files found." >> "$GITHUB_STEP_SUMMARY"
+          else
+            TOTAL_TESTS=0
+            TOTAL_FAILURES=0
+            TOTAL_ERRORS=0
+            TOTAL_SKIPPED=0
+
+            for file in $RESULT_FILES; do
+              TESTS=$(grep -o 'tests="[0-9]*"' "$file" | head -n1 | cut -d'"' -f2)
+              FAILURES=$(grep -o 'failures="[0-9]*"' "$file" | head -n1 | cut -d'"' -f2)
+              ERRORS=$(grep -o 'errors="[0-9]*"' "$file" | head -n1 | cut -d'"' -f2)
+              SKIPPED=$(grep -o 'skipped="[0-9]*"' "$file" | head -n1 | cut -d'"' -f2)
+              TOTAL_TESTS=$((TOTAL_TESTS + ${TESTS:-0}))
+              TOTAL_FAILURES=$((TOTAL_FAILURES + ${FAILURES:-0}))
+              TOTAL_ERRORS=$((TOTAL_ERRORS + ${ERRORS:-0}))
+              TOTAL_SKIPPED=$((TOTAL_SKIPPED + ${SKIPPED:-0}))
             done
+
+            echo "### Test results" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Tests: **$TOTAL_TESTS**" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Failures: **$TOTAL_FAILURES**" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Errors: **$TOTAL_ERRORS**" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Skipped: **$TOTAL_SKIPPED**" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No JUnit result directory was produced." >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$TOTAL_FAILURES" != "0" ] || [ "$TOTAL_ERRORS" != "0" ]; then
+              echo "### ❌ Test failure details" >> "$GITHUB_STEP_SUMMARY"
+              echo '```xml' >> "$GITHUB_STEP_SUMMARY"
+              grep -R "<failure\|<error" build/test-results/test/TEST-*.xml | head -n 40 >> "$GITHUB_STEP_SUMMARY" || true
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "### ✅ All JUnit tests passed" >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
-          if grep -R "<failure\|<error" build/test-results/test/TEST-*.xml >/dev/null 2>&1; then
-            echo "### Test failures / errors" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo '```xml' >> "$GITHUB_STEP_SUMMARY"
-            grep -R "<failure\|<error" build/test-results/test/TEST-*.xml | head -n 40 >> "$GITHUB_STEP_SUMMARY" || true
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Plugin verifier" >> "$GITHUB_STEP_SUMMARY"
           if [ -d build/reports/pluginVerifier ]; then
-            echo "### Plugin verifier" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Plugin verifier report directory was produced: \`build/reports/pluginVerifier/\`." >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Report directory produced: \`build/reports/pluginVerifier/\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Verified targets: **PyCharm Community 2023.3.7**, **PyCharm Professional 2023.3.7**, **PyCharm Professional 2026.1**" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "No plugin verifier report directory was produced." >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- ⚠️ No plugin verifier report directory was produced." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "Full Gradle test and verifier reports are uploaded as workflow artifacts." >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 📦 Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Open this workflow run to download \`test-report\` and \`plugin-verifier-report\`](../../actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test report
         if: always()

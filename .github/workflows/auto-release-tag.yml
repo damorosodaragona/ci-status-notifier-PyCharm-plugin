@@ -106,19 +106,27 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "## Auto release tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 🚀 Auto release tag" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- PR: #${{ github.event.pull_request.number }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- PR: [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})" >> "$GITHUB_STEP_SUMMARY"
           echo "- Target branch: \`${{ github.event.pull_request.base.ref }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Resolved tag: \`${{ steps.version.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+
           if compgen -G "build/distributions/*.zip" > /dev/null; then
-            echo "### Built plugin ZIP" >> "$GITHUB_STEP_SUMMARY"
+            echo "### ✅ Built plugin ZIP" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             for file in build/distributions/*.zip; do
               size=$(du -h "$file" | cut -f1)
               echo "- \`$file\` ($size)" >> "$GITHUB_STEP_SUMMARY"
             done
           else
-            echo "No plugin ZIP was produced." >> "$GITHUB_STEP_SUMMARY"
+            echo "### ❌ No plugin ZIP was produced" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Links" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Open this workflow run](../../actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${{ steps.version.outputs.tag }}" ]; then
+            echo "- [Open release page](../../releases/tag/${{ steps.version.outputs.tag }})" >> "$GITHUB_STEP_SUMMARY"
           fi
