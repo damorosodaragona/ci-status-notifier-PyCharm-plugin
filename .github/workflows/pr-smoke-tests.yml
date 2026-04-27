@@ -43,6 +43,36 @@ jobs:
           JCN_CONTAINER_SMOKE_ENABLED: true
         run: ./gradlew test --tests "*SmokeTest"
 
+      - name: Add smoke test summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Controlled smoke tests" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Command: \`./gradlew test --tests \"*SmokeTest\"\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Docker-backed smoke tests enabled: \`JCN_CONTAINER_SMOKE_ENABLED=true\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -d build/test-results/test ]; then
+            echo "### JUnit result files" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            find build/test-results/test -maxdepth 1 -type f -name "TEST-*.xml" | sort | while read -r file; do
+              echo "- \`$file\`" >> "$GITHUB_STEP_SUMMARY"
+            done
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No JUnit result directory was produced." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if grep -R "<failure\|<error" build/test-results/test/TEST-*.xml >/dev/null 2>&1; then
+            echo "### Failures / errors" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```xml' >> "$GITHUB_STEP_SUMMARY"
+            grep -R "<failure\|<error" build/test-results/test/TEST-*.xml | head -n 40 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Gradle HTML report and JUnit XML files are uploaded as the \`smoke-test-reports\` artifact." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload smoke test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -52,21 +82,3 @@ jobs:
             build/reports/tests/test/
             build/test-results/test/
           if-no-files-found: ignore
-
-      - name: Smoke test summary
-        if: always()
-        run: |
-          echo "## Controlled smoke tests" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Gradle HTML report is available in the artifact \`smoke-test-reports\`." >> $GITHUB_STEP_SUMMARY
-          echo "- JUnit XML results are available in \`build/test-results/test/\`." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ -f build/test-results/test/TEST-com.damorosodaragona.jenkinsnotifier.CiStatusConfigurableContainerSmokeTest.xml ]; then
-            echo "### Smoke test result file found" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`xml" >> $GITHUB_STEP_SUMMARY
-            grep -E "<testsuite|<failure|<error|<skipped" build/test-results/test/TEST-com.damorosodaragona.jenkinsnotifier.CiStatusConfigurableContainerSmokeTest.xml >> $GITHUB_STEP_SUMMARY || true
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Smoke test XML result file not found." >> $GITHUB_STEP_SUMMARY
-          fi
