@@ -42,3 +42,13 @@ jobs:
         env:
           JCN_CONTAINER_SMOKE_ENABLED: true
         run: ./gradlew test --tests "*SmokeTest"
+
+      - name: Upload smoke test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-reports
+          path: |
+            build/reports/tests/test/
+            build/test-results/test/
+          if-no-files-found: ignore
