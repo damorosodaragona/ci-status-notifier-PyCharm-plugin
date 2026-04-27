@@ -149,18 +149,25 @@ They must:
 
 ---
 
-## Testing Strategy
+[//]: # (## Testing Strategy)
 
-Tests are pure (no IDE required).
+[//]: # ()
+[//]: # (Tests are pure &#40;no IDE required&#41;.)
 
-Covered cases:
+[//]: # ()
+[//]: # (Covered cases:)
 
-* Auto-login success → no notification
-* Auto-login failure → notification shown
-* Notification click → interactive login
-* Concurrent auto-login → waits correctly
+[//]: # ()
+[//]: # (* Auto-login success → no notification)
 
----
+[//]: # (* Auto-login failure → notification shown)
+
+[//]: # (* Notification click → interactive login)
+
+[//]: # (* Concurrent auto-login → waits correctly)
+
+[//]: # ()
+[//]: # (---)
 
 
 ## Tests and Verification
@@ -222,19 +229,77 @@ New smoke test classes should follow this naming convention:
 
 The PR smoke workflow runs all classes matching this pattern.
 
-### Build plugin
+---
+### PIT Mutation Testing Scripts
 
-To build the plugin ZIP locally:
+The project includes helper scripts for running PIT mutation testing in a controlled way.
+
+PIT is configured in `build.gradle.kts` and currently targets the core classes that contain pure decision logic:
+
+```
+com.damorosodaragona.jenkinsnotifier.CiStatusBuildLogic
+com.damorosodaragona.jenkinsnotifier.AuthNotificationCoordinator
+```
+
+The default PIT configuration uses a small set of stable tests. For broader mutation analysis, use the scripts in `scripts/`.
+
+#### Discover PIT-safe tests
+
+Run:
 
 ```bash
-./gradlew clean buildPlugin
+./scripts/discover-pit-safe-tests.sh
 ```
 
-The generated plugin artifact is produced under:
+This script:
 
-```text
-build/distributions/
+* builds the test classes
+* scans Kotlin test classes under `com.damorosodaragona.jenkinsnotifier`
+* runs PIT once per test class
+* writes safe tests to `build/pit-safe-tests.txt`
+* writes failing or incompatible tests to `build/pit-unsafe-tests.txt`
+* stores detailed logs in `build/pit-discovery-logs/`
+
+A test is considered PIT-safe when PIT can execute it successfully in isolation.
+
+#### Run PIT with safe tests
+
+After discovery, run:
+
+```bash
+./scripts/safe-pitest.sh
 ```
+
+This script reads `build/pit-safe-tests.txt` and passes it to Gradle through:
+
+```bash
+-PpitSafeTestsFile=build/pit-safe-tests.txt
+```
+
+The PIT HTML report is generated under:
+
+```
+build/reports/pitest/
+```
+
+#### Run PIT for one test class
+
+For debugging a specific test class, run PIT directly with:
+
+```bash
+./gradlew pitest --no-configuration-cache --rerun-tasks -PpitTargetTests=com.damorosodaragona.jenkinsnotifier.SomeTest
+```
+
+This is useful when deciding whether a test should be included in the safe list.
+
+#### Contributor rules for PIT
+
+* Keep PIT focused on pure logic classes.
+* Do not add UI-heavy or IDE-dependent tests to the safe PIT list.
+* If a test is unstable under PIT, leave it in `pit-unsafe-tests.txt` and keep it covered by normal JUnit tests.
+* Use PIT as an additional quality check, not as a replacement for regular unit tests.
+
+---
 
 ### Plugin verifier
 
@@ -266,7 +331,21 @@ JCN_CONTAINER_SMOKE_ENABLED=true ./gradlew test --tests "*SmokeTest"
 ./gradlew clean buildPlugin
 ./gradlew verifyPlugin
 ```
+---
 
+## Build plugin
+
+To build the plugin ZIP locally:
+
+```bash
+./gradlew clean buildPlugin
+```
+
+The generated plugin artifact is produced under:
+
+```text
+build/distributions/
+```
 ---
 
 ## Rules for Contributors
