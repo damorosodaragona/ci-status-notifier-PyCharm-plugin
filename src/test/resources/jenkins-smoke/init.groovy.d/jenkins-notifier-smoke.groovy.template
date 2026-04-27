@@ -1,0 +1,36 @@
+import jenkins.model.Jenkins
+import jenkins.install.InstallState
+import hudson.model.FreeStyleProject
+import hudson.tasks.Shell
+import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
+import hudson.security.HudsonPrivateSecurityRealm
+
+println('[jenkins-notifier-smoke] init start')
+
+def instance = Jenkins.get()
+
+instance.setNumExecutors(1)
+instance.setCrumbIssuer(null)
+
+def realm = new HudsonPrivateSecurityRealm(false)
+realm.createAccount('robot', 'jenkins-token')
+instance.setSecurityRealm(realm)
+
+def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
+instance.setAuthorizationStrategy(strategy)
+
+if (instance.getItem('smoke-job') == null) {
+    def job = instance.createProject(FreeStyleProject, 'smoke-job')
+    job.description = 'Controlled Jenkins smoke job for Jenkins CI Notifier tests.'
+    job.buildersList.add(new Shell('echo jenkins-notifier-smoke'))
+    job.save()
+    println('[jenkins-notifier-smoke] smoke-job created')
+} else {
+    println('[jenkins-notifier-smoke] smoke-job already exists')
+}
+
+instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
+instance.save()
+
+println('[jenkins-notifier-smoke] init completed')
