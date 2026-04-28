@@ -1,25 +1,8 @@
 # CI Status Notifier
 
-Small PyCharm/IntelliJ plugin that polls GitHub commit statuses for the current Git commit and shows IDE notifications when CI status changes.
+Small PyCharm/IntelliJ plugin that watches CI from inside the IDE and shows notifications when build state changes.
 
-It is designed for repositories where Jenkins publishes commit statuses to GitHub, so the IDE does not need direct Jenkins access or a Jenkins plugin.
-
-## Local Development
-
-Open this folder as a Gradle project in PyCharm or IntelliJ IDEA:
-
-```bash
-ide-plugins/ci-status-notifier
-```
-
-Useful Gradle tasks:
-
-```bash
-./gradlew runIde
-./gradlew buildPlugin
-```
-
-If the Gradle wrapper is not present, import the project in the IDE and let JetBrains create/use a Gradle runtime, or install Gradle locally.
+It supports GitHub commit statuses and direct Jenkins monitoring. Jenkins mode adds a CI Status tool window for job scanning, branch-aware job selection, Pipeline stages, artifacts, and HTML report preview.
 
 ## Installation from ZIP
 
@@ -57,13 +40,13 @@ After installing/running the plugin:
 Settings | Tools | CI Status Notifier
 ```
 
-Configure GitHub status mode:
+Use GitHub status mode when Jenkins already publishes commit statuses to GitHub:
 
 - GitHub repository in `owner/name` format.
 - Optional GitHub token. Required for private repositories or high polling frequency.
 - Poll interval in seconds.
 
-Configure Jenkins mode:
+Use Jenkins mode when the IDE should read Jenkins directly:
 
 - Jenkins base URL.
 - Optional Jenkins scan root. Leave blank to scan from the Jenkins root, or set a raw (`job/Folder/job/project`) or slash-separated (`Folder/project`) path to narrow the scan. Root scans require Jenkins permissions that allow reading the global Jenkins root.
@@ -77,6 +60,6 @@ Enable API access without requiring an OIDC session on the Jenkins server.
 
 If that is not possible and you are using Keycloak, you can try enabling the **experimental Keycloak auto-login** feature in the plugin settings.
 
-Jenkins mode adds a `CI Status` tool window that scans the configured Jenkins root, auto-selects the build job that best matches the current Git branch, and still shows the Jenkins job tree as a manual fallback. Selecting a job shows its latest build, Pipeline stages, artifacts, and an in-IDE preview for HTML report artifacts when the IDE supports embedded browser rendering. HTML previews download all artifacts for the selected build into the IDE cache while preserving artifact paths, so linked CSS, scripts, images, and relative links keep working locally.
+The `CI Status` tool window scans the configured Jenkins root, auto-selects the build job that best matches the current Git branch, and still shows the Jenkins job tree as a manual fallback. Selecting a job shows its latest build, Pipeline stages, artifacts, and an in-IDE preview for HTML report artifacts when embedded browser rendering is available.
 
 Tokens are stored in the JetBrains Password Safe.
