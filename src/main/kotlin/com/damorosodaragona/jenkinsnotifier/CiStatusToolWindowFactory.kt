@@ -176,6 +176,7 @@ private class JenkinsDashboardPanel(
     }
 
     private fun buildComponent(): JComponent {
+        configureAutomationNames()
         refreshButton.addActionListener { refresh(manual = true) }
 //        testJenkinsButton.addActionListener { testJenkinsConnection() }
         openJenkinsButton.addActionListener { latestBuild?.url?.let(BrowserUtil::browse) }
@@ -1307,6 +1308,30 @@ private class JenkinsDashboardPanel(
     private fun updateActions() {
         openJenkinsButton.isEnabled = latestBuild != null
         openArtifactButton.isEnabled = latestBuild?.state != "RUNNING" && selectedArtifact() != null
+    }
+
+    private fun configureAutomationNames() {
+        summary.withAutomationName("ciStatus.dashboard.summary")
+        jobsTree.withAutomationName("ciStatus.dashboard.jobsTree")
+        stages.withAutomationName("ciStatus.dashboard.stages")
+        artifactsTree.withAutomationName("ciStatus.dashboard.artifactsTree")
+        artifactsStatus.withAutomationName("ciStatus.dashboard.artifactsStatus")
+        previewContainer.withAutomationName("ciStatus.dashboard.preview")
+        previewContent.withAutomationName("ciStatus.dashboard.previewContent")
+        statusBadge.withAutomationName("ciStatus.dashboard.statusBadge")
+        buildTitle.withAutomationName("ciStatus.dashboard.buildTitle")
+        buildMeta.withAutomationName("ciStatus.dashboard.buildMeta")
+        kpiPanel.withAutomationName("ciStatus.dashboard.kpis")
+        refreshButton.withAutomationName("ciStatus.dashboard.refresh")
+        openJenkinsButton.withAutomationName("ciStatus.dashboard.openJenkins")
+        openArtifactButton.withAutomationName("ciStatus.dashboard.openArtifact")
+        closePreviewButton.withAutomationName("ciStatus.dashboard.closePreview")
+        moreButton.withAutomationName("ciStatus.dashboard.moreActions")
+    }
+
+    private fun JComponent.withAutomationName(value: String) {
+        name = value
+        accessibleContext.accessibleName = value
     }
 
     private fun updateToolWindowIcon(state: String?) {
