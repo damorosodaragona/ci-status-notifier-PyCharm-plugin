@@ -88,6 +88,17 @@ class CiStatusInfrastructureCoverageTest {
     }
 
     @Test
+    fun `release metadata targets v1 stable release`() {
+        val properties = Path.of("gradle.properties").readLines()
+        val releaseNotes = Path.of("RELEASE_NOTES.md")
+
+        assertTrue(properties.any { it == "pluginVersion=1.0.0" })
+        assertTrue(releaseNotes.exists())
+        assertTrue(releaseNotes.readText().contains("## v1.0.0"))
+        assertTrue(releaseNotes.readText().contains("Jenkins CI Notifier"))
+    }
+
+    @Test
     fun `watcher detects head changes after baseline observation`() {
         val watcher = watcherForProject(projectWithBasePath(createGitRepo(branch = "feature/watcher-test")))
 
