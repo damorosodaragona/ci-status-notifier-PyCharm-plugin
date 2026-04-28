@@ -2,13 +2,56 @@
 
 ## Overview
 
-The plugin monitors Jenkins CI status and handles authentication automatically when possible.
+The plugin monitors CI status from GitHub or Jenkins and reports changes in PyCharm/IntelliJ. Jenkins mode also exposes a CI Status tool window with job discovery, Pipeline stages, artifacts, and preview support.
 
 Core flow:
 
 ```
-Polling → Jenkins API → Auth check → Auto-login → (optional) Notification → UI update
+Settings -> Jenkins API -> polling -> UI
 ```
+
+---
+
+## Project Structure
+
+Main source lives in `src/main/kotlin/com/damorosodaragona/jenkinsnotifier`.
+
+Key files:
+
+* `CiStatusSettings.kt` stores user settings and credentials through JetBrains Password Safe.
+* `CiStatusConfigurable.kt` builds the Settings page and Jenkins connection test action.
+* `CiStatusStartupActivity.kt` starts background polling and routes status changes.
+* `JenkinsStatusClient.kt` contains Jenkins API calls, job tree scanning, build parsing, artifacts, and auth-expiry handling.
+* `GitHubStatusClient.kt` reads GitHub commit status summaries.
+* `CiStatusBuildLogic.kt` contains pure notification and transition decisions.
+* `CiStatusToolWindowFactory.kt` builds the CI Status tool window and Jenkins UI.
+* `KeycloakSessionService.kt` handles experimental Keycloak / OIDC browser-session recovery.
+* `AuthNotificationCoordinator.kt` decides when auth notifications should be shown.
+* `LegacySettingsMigration.kt` migrates old persisted settings.
+
+Tests live in `src/test/kotlin/com/damorosodaragona/jenkinsnotifier`. Test resources live in `src/test/resources`.
+
+Build and plugin metadata:
+
+* `build.gradle.kts` declares Gradle, IntelliJ Platform, test, PIT, and verifier configuration.
+* `gradle.properties` stores plugin name, group, version, and target platform version.
+* `src/main/resources/META-INF/plugin.xml` registers plugin services, settings, startup activity, and tool window.
+
+Runtime flow:
+
+1. User configures Settings through `CiStatusConfigurable`.
+2. Settings are read from `CiStatusSettings`.
+3. `CiStatusStartupActivity` starts polling.
+4. GitHub mode calls `GitHubStatusClient`; Jenkins mode calls `JenkinsStatusClient`.
+5. `CiStatusBuildLogic` decides whether a notification or refresh is needed.
+6. Notifications go through `CiStatusNotifier`.
+7. Jenkins UI updates flow through `CiStatusToolWindowFactory`.
+
+Artifacts and preview flow:
+
+* `JenkinsStatusClient` reads artifact metadata and downloads selected build artifacts into the IDE cache.
+* `CiStatusToolWindowFactory` renders the artifact tree and opens supported HTML/text previews.
+* HTML preview preserves relative paths so linked CSS, scripts, images, and reports continue to work locally.
 
 ---
 
@@ -171,6 +214,12 @@ They must:
 
 
 ## Tests and Verification
+
+Run the plugin in a development IDE with:
+
+```bash
+./gradlew runIde
+```
 
 ### Standard test suite
 
@@ -369,4 +418,3 @@ LegacySettingsMigration*
 Can be removed after stable release (1.0.0+).
 
 ---
-

@@ -99,6 +99,34 @@ class CiStatusInfrastructureCoverageTest {
     }
 
     @Test
+    fun `documentation covers end user setup and contributor architecture`() {
+        val readme = Path.of("README.md").readText()
+        val contributing = Path.of("CONTRIBUTING.md").readText()
+
+        listOf(
+            "Settings | Tools | CI Status Notifier",
+            "Jenkins base URL",
+            "Jenkins scan root",
+            "GitHub repository",
+            "Keycloak / OIDC",
+            "CI Status tool window",
+            "artifacts",
+        ).forEach { assertTrue(readme.contains(it), "README missing $it") }
+
+        listOf(
+            "Project Structure",
+            "Settings -> Jenkins API -> polling -> UI",
+            "JenkinsStatusClient",
+            "CiStatusToolWindowFactory",
+            "CiStatusSettings",
+            "artifacts",
+            "KeycloakSessionService",
+            "./gradlew runIde",
+            "./gradlew test",
+        ).forEach { assertTrue(contributing.contains(it), "CONTRIBUTING missing $it") }
+    }
+
+    @Test
     fun `watcher detects head changes after baseline observation`() {
         val watcher = watcherForProject(projectWithBasePath(createGitRepo(branch = "feature/watcher-test")))
 
