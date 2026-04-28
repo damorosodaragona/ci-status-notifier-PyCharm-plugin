@@ -79,6 +79,7 @@ class CiStatusConfigurable(
     private var panel: JPanel? = null
 
     init {
+        configureAutomationNames()
         testJenkinsButton.addActionListener {
             testJenkinsConnectionFromSettings()
         }
@@ -221,5 +222,33 @@ class CiStatusConfigurable(
         notifySuccess.isSelected = settings.notifySuccess
         notifyFailure.isSelected = settings.notifyFailure
         updateProviderSettingsVisibility()
+    }
+
+    private fun configureAutomationNames() {
+        enabled.withAutomationName("ciStatus.enabled")
+        provider.withAutomationName("ciStatus.provider")
+        repository.withAutomationName("ciStatus.githubRepository")
+        token.withAutomationName("ciStatus.githubToken")
+        githubSettingsPanel.withAutomationName("ciStatus.githubSettingsPanel")
+        jenkinsSettingsPanel.withAutomationName("ciStatus.jenkinsSettingsPanel")
+        jenkinsBaseUrl.withAutomationName("ciStatus.jenkinsBaseUrl")
+        jenkinsJobPath.withAutomationName("ciStatus.jenkinsScanRoot")
+        jenkinsUsername.withAutomationName("ciStatus.jenkinsUsername")
+        jenkinsToken.withAutomationName("ciStatus.jenkinsApiToken")
+        testJenkinsButton.withAutomationName("ciStatus.testJenkinsConnection")
+        experimentalKeycloakInteractiveFallback.withAutomationName("ciStatus.keycloakInteractiveFallback")
+        experimentalKeycloakAutoLogin.withAutomationName("ciStatus.keycloakAutoLogin")
+        experimentalKeycloakDebug.withAutomationName("ciStatus.keycloakDebug")
+        keycloakWebUsername.withAutomationName("ciStatus.keycloakWebUsername")
+        keycloakWebPassword.withAutomationName("ciStatus.keycloakWebPassword")
+        pollInterval.withAutomationName("ciStatus.pollIntervalSeconds")
+        notifyPending.withAutomationName("ciStatus.notifyPending")
+        notifySuccess.withAutomationName("ciStatus.notifySuccess")
+        notifyFailure.withAutomationName("ciStatus.notifyFailure")
+    }
+
+    private fun JComponent.withAutomationName(value: String) {
+        name = value
+        accessibleContext.accessibleName = value
     }
 }
