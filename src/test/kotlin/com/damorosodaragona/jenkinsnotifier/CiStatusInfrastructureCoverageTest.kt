@@ -15,6 +15,7 @@ import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.startCoroutine
 import kotlin.io.path.exists
 import kotlin.io.path.readLines
+import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -72,6 +73,18 @@ class CiStatusInfrastructureCoverageTest {
         watcher.invokePrivate("startBoostedPolling", Long::class.javaPrimitiveType!! to now)
         assertTrue(watcher.invokePrivateBoolean("isBoostedPolling", Long::class.javaPrimitiveType!! to now + 5_000L))
         assertFalse(watcher.invokePrivateBoolean("isBoostedPolling", Long::class.javaPrimitiveType!! to now + 181_000L))
+    }
+
+    @Test
+    fun `startup watcher declares Jenkins fingerprint only once`() {
+        val source = Path.of("src/main/kotlin/com/damorosodaragona/jenkinsnotifier/CiStatusStartupActivity.kt").readText()
+        val handleJenkinsSummary = source.substringAfter("private fun handleJenkinsSummary")
+            .substringBefore("private fun startBoostedPolling")
+        val declarations = Regex("""val fingerprint = CiStatusBuildLogic\.fingerprint\(summary\)""")
+            .findAll(handleJenkinsSummary)
+            .count()
+
+        assertEquals(1, declarations)
     }
 
     @Test
