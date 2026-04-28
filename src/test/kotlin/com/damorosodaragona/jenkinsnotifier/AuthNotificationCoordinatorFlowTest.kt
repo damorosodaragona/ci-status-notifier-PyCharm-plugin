@@ -120,4 +120,66 @@ class AuthNotificationCoordinatorFlowTest {
             events,
         )
     }
+
+    @Test
+    fun `ui auth flow attempts auto-login then notification click runs interactive autofill`() {
+        val events = mutableListOf<String>()
+        var notificationClick: (() -> Unit)? = null
+
+        val decision = AuthNotificationCoordinator.notifyOnlyAfterAutoLoginFailure(
+            source = "tool-window-background",
+            attemptAutoLogin = {
+                events += "auto-login"
+                false
+            },
+            showNotification = {
+                events += "show-notification"
+                notificationClick = AuthNotificationCoordinator.loginAction(
+                    source = "tool-window-background",
+                    recoverWithInteractiveFallback = {
+                        events += "interactive-login"
+                        val script = KeycloakAutofillScripts.interactiveAutofillScript(
+                            username = "robot",
+                            password = "secret",
+                            logInject = "log(msg)",
+                            reason = "load",
+                        )
+                        events += if (
+                            "user.value = 'robot'" in script &&
+                            "pass.value = 'secret'" in script &&
+                            "dispatchEvent(new Event('input'" in script &&
+                            "waiting for user submit" in script &&
+                            "form.submit()" !in script
+                        ) {
+                            "autofill-ready"
+                        } else {
+                            "autofill-invalid"
+                        }
+                        true
+                    },
+                    onRecovered = { events += "refresh-ui" },
+                    log = { events += it },
+                )
+            },
+            log = { events += it },
+        )
+
+        notificationClick?.invoke()
+
+        assertEquals(AuthNotificationCoordinator.Decision.NotificationShown, decision)
+        assertEquals(
+            listOf(
+                "auth-notify CHECK source=tool-window-background",
+                "auto-login",
+                "auth-notify SHOW: auto-login/recover failed source=tool-window-background",
+                "show-notification",
+                "auth-notify CLICK: retry auth with interactive fallback source=tool-window-background",
+                "interactive-login",
+                "autofill-ready",
+                "auth-notify CLICK result=true source=tool-window-background",
+                "refresh-ui",
+            ),
+            events,
+        )
+    }
 }
