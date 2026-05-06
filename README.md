@@ -1,27 +1,59 @@
 # CI Status Notifier
 
-Small PyCharm/IntelliJ plugin that polls GitHub commit statuses for the current Git commit and shows IDE notifications when CI status changes.
+CI Status Notifier is a PyCharm/IntelliJ plugin that keeps the current project's CI state visible inside the IDE.
 
-It is designed for repositories where Jenkins publishes commit statuses to GitHub, so the IDE does not need direct Jenkins access or a Jenkins plugin.
+It can read GitHub commit statuses or query Jenkins directly, then shows notifications when the build changes state. In Jenkins mode it also adds a **Jenkins CI** tool window with the detected job, latest build status, Pipeline stages, build artifacts, and HTML report previews when embedded browser rendering is available.
 
-## Local Development
+## Configure the Plugin
 
-Open this folder as a Gradle project in PyCharm or IntelliJ IDEA:
+Open:
 
-```bash
-ide-plugins/ci-status-notifier
+```text
+Settings | Tools | Jenkins CI Notifier
 ```
 
-Useful Gradle tasks:
+Enable **Poll CI statuses**, choose a provider, then fill in the fields for your setup.
 
-```bash
-./gradlew runIde
-./gradlew buildPlugin
-```
+### GitHub Status Mode
 
-If the Gradle wrapper is not present, import the project in the IDE and let JetBrains create/use a Gradle runtime, or install Gradle locally.
+Use this when Jenkins or another CI service publishes commit statuses to GitHub.
 
-## Installation from ZIP
+- **GitHub repository**: repository in `owner/name` format.
+- **GitHub token**: optional, but recommended for private repositories or frequent polling.
+- **Poll interval seconds**: how often the plugin checks for status changes.
+- **Notifications**: choose whether pending, successful, and failed/error statuses should trigger IDE notifications.
+
+### Jenkins Mode
+
+Use this when the plugin should talk to Jenkins directly.
+
+- **Jenkins URL**: base URL for your Jenkins instance.
+- **Jenkins scan root**: optional path used to narrow job discovery. Leave it blank to scan from the Jenkins root, use a raw path such as `job/Folder/job/project`, or use a slash-separated path such as `Folder/project`.
+- **Jenkins username** and **Jenkins API token**: optional credentials for Jenkins API access.
+- **Test Jenkins connection**: checks the current Settings values and reports what the plugin can reach.
+- **Poll interval seconds** and **Notifications**: control polling cadence and notification types.
+
+Jenkins mode tries to match the current Git branch to the best Jenkins job. If automatic detection is not enough, the tool window still shows the Jenkins job tree so you can select a job manually.
+
+## Authentication
+
+Tokens and web passwords are stored in the JetBrains Password Safe.
+
+The recommended Jenkins setup is API access with a Jenkins API token that does not require an active browser/OIDC session.
+
+If your Jenkins instance requires Keycloak or another OIDC web session, the plugin includes experimental options:
+
+- **Keycloak interactive login fallback** opens a browser login flow when API access fails.
+- **Keycloak auto-login** tries to restore the web session in the background using stored web credentials.
+- **Keycloak authentication debug log** adds diagnostic log entries for auth troubleshooting.
+
+These options are experimental because OIDC and Jenkins gateway behavior can vary by server and IDE version.
+
+## Artifacts and Preview
+
+When Jenkins mode finds a build, the tool window can list artifacts for that build. HTML report artifacts can be opened in an IDE preview when supported. The plugin downloads the selected build's artifacts into the IDE cache while preserving relative paths, so linked CSS, scripts, images, and report pages can render locally.
+
+## Install from ZIP
 
 Build the plugin ZIP:
 
@@ -29,54 +61,22 @@ Build the plugin ZIP:
 ./gradlew buildPlugin
 ```
 
-The generated ZIP is created under:
+The ZIP is created under:
 
 ```text
 build/distributions/
 ```
 
-You can also download the ZIP from the latest GitHub Release:
-
-```text
-https://github.com/damorosodaragona/ci-status-notifier-PyCharm-plugin/releases/latest
-```
-
-Install it in PyCharm or IntelliJ IDEA:
+Install it from the IDE:
 
 1. Open `Settings | Plugins`.
 2. Click the gear icon.
 3. Select `Install Plugin from Disk...`.
-4. Choose the ZIP file from `build/distributions/` or from the GitHub Release assets.
-5. Restart the IDE when prompted.
+4. Choose the ZIP from `build/distributions/`.
+5. Restart the IDE if prompted.
 
-## Configuration
-
-After installing/running the plugin:
+You can also use the latest GitHub Release when one is available:
 
 ```text
-Settings | Tools | CI Status Notifier
+https://github.com/damorosodaragona/ci-status-notifier-PyCharm-plugin/releases/latest
 ```
-
-Configure GitHub status mode:
-
-- GitHub repository in `owner/name` format.
-- Optional GitHub token. Required for private repositories or high polling frequency.
-- Poll interval in seconds.
-
-Configure Jenkins mode:
-
-- Jenkins base URL.
-- Optional Jenkins scan root. Leave blank to scan from the Jenkins root, or set a raw (`job/Folder/job/project`) or slash-separated (`Folder/project`) path to narrow the scan. Root scans require Jenkins permissions that allow reading the global Jenkins root.
-- Optional Jenkins username and API token.
-- Poll interval in seconds.
-
-Some Jenkins instances require an active web session (Keycloak / OIDC) to allow API access.
-
-**Recommended solution:**  
-Enable API access without requiring an OIDC session on the Jenkins server.
-
-If that is not possible and you are using Keycloak, you can try enabling the **experimental Keycloak auto-login** feature in the plugin settings.
-
-Jenkins mode adds a `CI Status` tool window that scans the configured Jenkins root, auto-selects the build job that best matches the current Git branch, and still shows the Jenkins job tree as a manual fallback. Selecting a job shows its latest build, Pipeline stages, artifacts, and an in-IDE preview for HTML report artifacts when the IDE supports embedded browser rendering. HTML previews download all artifacts for the selected build into the IDE cache while preserving artifact paths, so linked CSS, scripts, images, and relative links keep working locally.
-
-Tokens are stored in the JetBrains Password Safe.
