@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.0.1
+
+- Update the plugin logo with a cleaner minimal SVG icon for Marketplace and IDE plugin listings.
+
 ## v1.0.0
 
 This is the first stable MVP release of Jenkins CI Notifier.
