@@ -12,9 +12,45 @@ class KeycloakSessionServiceReflectionTest {
         val service = KeycloakSessionService(project = projectWithServiceStub())
 
         assertTrue(service.looksLikeLoginForTest("https://jenkins.example.org/securityRealm/commenceLogin"))
+        assertTrue(service.looksLikeLoginForTest("https://jenkins.example.org/securityRealm/finishLogin"))
+        assertTrue(service.looksLikeLoginForTest("https://jenkins.example.org/securityRealm/loginError"))
         assertTrue(service.looksLikeLoginForTest("https://id.example.org/keycloak/realms/test/protocol/openid-connect/auth"))
         assertTrue(service.looksLikeLoginForTest("https://id.example.org/realms/test/login-actions/authenticate"))
         assertFalse(service.looksLikeLoginForTest("https://jenkins.example.org/job/projector/lastBuild/api/json"))
+    }
+
+    @Test
+    fun `interactive login rejects Jenkins error and login callback URLs`() {
+        val service = KeycloakSessionService(project = projectWithServiceStub())
+
+        assertFalse(
+            service.interactiveLoginSuccessfulForTest(
+                accepted = true,
+                baseUrl = "https://jenkins.example.org",
+                finalUrl = "https://jenkins.example.org/securityRealm/finishLogin",
+            ),
+        )
+        assertFalse(
+            service.interactiveLoginSuccessfulForTest(
+                accepted = true,
+                baseUrl = "https://jenkins.example.org",
+                finalUrl = "https://jenkins.example.org/securityRealm/loginError",
+            ),
+        )
+        assertFalse(
+            service.interactiveLoginSuccessfulForTest(
+                accepted = false,
+                baseUrl = "https://jenkins.example.org",
+                finalUrl = "https://jenkins.example.org/",
+            ),
+        )
+        assertTrue(
+            service.interactiveLoginSuccessfulForTest(
+                accepted = true,
+                baseUrl = "https://jenkins.example.org",
+                finalUrl = "https://jenkins.example.org/",
+            ),
+        )
     }
 
     @Test
@@ -53,5 +89,20 @@ class KeycloakSessionServiceReflectionTest {
         val method = KeycloakSessionService::class.java.getDeclaredMethod("jsString", String::class.java)
         method.isAccessible = true
         return method.invoke(this, value) as String
+    }
+
+    private fun KeycloakSessionService.interactiveLoginSuccessfulForTest(
+        accepted: Boolean,
+        baseUrl: String,
+        finalUrl: String,
+    ): Boolean {
+        val method = KeycloakSessionService::class.java.getDeclaredMethod(
+            "isInteractiveLoginSuccessful",
+            Boolean::class.javaPrimitiveType,
+            String::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(this, accepted, baseUrl, finalUrl) as Boolean
     }
 }

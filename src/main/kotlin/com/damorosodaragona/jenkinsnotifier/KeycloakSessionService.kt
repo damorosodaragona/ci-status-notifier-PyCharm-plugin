@@ -179,7 +179,7 @@ class KeycloakSessionService(private val project: Project) : Disposable {
             val accepted = dialog.showAndGet()
             autofillTimer?.stop()
             val finalUrl = browser.cefBrowser.url.orEmpty()
-            result[0] = accepted && finalUrl.startsWith(baseUrl) && !looksLikeLogin(finalUrl)
+            result[0] = isInteractiveLoginSuccessful(accepted, baseUrl, finalUrl)
             log("interactive-login closed accepted=$accepted finalUrl=$finalUrl result=${result[0]}")
             finished.countDown()
         }
@@ -382,7 +382,7 @@ class KeycloakSessionService(private val project: Project) : Disposable {
                 return;
               }
 
-              if (current.startsWith('${jsString(baseUrl)}') && current.indexOf('commenceLogin') === -1) {
+              if (current.startsWith('${jsString(baseUrl)}') && !/(securityRealm|commenceLogin|finishLogin|loginError)/i.test(current)) {
                 window.__ciStatusProbeRunning = true;
                 log('on Jenkins origin; starting API probe url=${jsString(probeUrl)}');
                 fetch('${jsString(probeUrl)}', {
@@ -434,9 +434,19 @@ class KeycloakSessionService(private val project: Project) : Disposable {
     """.trimIndent()
 
     private fun looksLikeLogin(url: String): Boolean =
-        url.contains("commenceLogin", ignoreCase = true) ||
+        url.contains("securityRealm", ignoreCase = true) ||
+            url.contains("commenceLogin", ignoreCase = true) ||
+            url.contains("finishLogin", ignoreCase = true) ||
+            url.contains("loginError", ignoreCase = true) ||
             url.contains("keycloak", ignoreCase = true) ||
             url.contains("login-actions", ignoreCase = true)
+
+    private fun isInteractiveLoginSuccessful(accepted: Boolean, baseUrl: String, finalUrl: String): Boolean {
+        val normalizedBaseUrl = baseUrl.trim().trimEnd('/')
+        return accepted &&
+            finalUrl.startsWith(normalizedBaseUrl, ignoreCase = true) &&
+            !looksLikeLogin(finalUrl)
+    }
 
     private fun jsString(value: String): String =
         value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
