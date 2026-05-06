@@ -1,372 +1,180 @@
 # CONTRIBUTING
 
-## Overview
+This project is a JetBrains IDE plugin for showing CI status in PyCharm/IntelliJ. It supports GitHub commit-status polling and direct Jenkins polling, with optional experimental Keycloak/OIDC session recovery for Jenkins setups that require a browser login.
 
-The plugin monitors Jenkins CI status and handles authentication automatically when possible.
+## Project Layout
 
-Core flow:
+- `src/main/kotlin/com/damorosodaragona/jenkinsnotifier/`: Kotlin production code.
+- `src/main/resources/META-INF/plugin.xml`: JetBrains plugin registration for settings, services, startup activity, tool window, and notifications.
+- `src/test/kotlin/com/damorosodaragona/jenkinsnotifier/`: unit, infrastructure, and smoke-oriented tests.
+- `src/test/resources/jenkins-smoke/`: disposable Jenkins resources for controlled smoke tests.
+- `.github/workflows/`: CI, plugin build, smoke test, and release workflows.
+- `scripts/`: local helper scripts, currently focused on PIT mutation testing.
 
-```
-Polling → Jenkins API → Auth check → Auto-login → (optional) Notification → UI update
-```
+## Main Components
 
----
+- `CiStatusSettings`: project-level persisted settings and Password Safe integration.
+- `CiStatusConfigurable`: Settings UI under `Settings | Tools | Jenkins CI Notifier`.
+- `CiStatusStartupActivity`: startup wiring, polling loop, notification decisions, and refresh events.
+- `CiStatusToolWindowFactory`: Jenkins CI tool window, job tree, build details, stages, artifacts, and preview actions.
+- `JenkinsStatusClient`: Jenkins API access, job discovery, build lookup, stages, artifacts, and diagnostics helpers.
+- `GitHubStatusClient`: GitHub commit-status lookup.
+- `CiStatusBuildLogic`: pure status transition and fingerprint logic.
+- `KeycloakSessionService`: experimental browser-based Keycloak/OIDC login recovery.
+- `AuthNotificationCoordinator`: pure decision logic for when auth recovery should show a notification.
+- `LegacySettingsMigration`: migration from older settings and credential keys.
 
-## Authentication Model
+## Runtime Flow
 
-Authentication is handled by `KeycloakSessionService`.
+The normal runtime path is:
 
-There are three levels.
-
-### 1. Background auto-login
-
-Triggered automatically during polling.
-
-```
-recover-auth start → attemptAutoLoginInBackground()
-```
-
-Behavior:
-
-* Uses stored credentials
-* Runs in hidden browser (JCEF)
-* Blocks until result (joins existing attempt if already running)
-
-Result:
-
-* `true` → session recovered
-* `false` → fallback required
-
----
-
-### 2. Interactive login
-
-Triggered only when needed.
-
-```
-ensureLoggedIn()
+```text
+Settings -> Jenkins/GitHub client -> polling -> build logic -> notifications/UI refresh
 ```
 
-Behavior:
+For Jenkins mode:
 
-* Opens browser dialog
-* Autofills credentials
-* User can intervene if needed
-
----
-
-### 3. Notification fallback
-
-Triggered only when auto-login fails.
-
-Managed by `AuthNotificationCoordinator`.
-
-Rules:
-
-* DO NOT show notification if auto-login is running
-* DO NOT show notification if auto-login succeeds
-* SHOW notification only if auto-login fails
-
-Flow:
-
-```
-Auth failure
-  ↓
-attemptAutoLoginInBackground()
-  ↓
-true  → SKIP notification
-false → SHOW notification
+```text
+Settings
+  -> JenkinsStatusClient
+  -> branch/job discovery
+  -> latest build summary
+  -> CiStatusBuildLogic
+  -> notification and Jenkins CI tool window refresh
 ```
 
----
+For GitHub mode:
 
-## Logging
-
-All auth-related behavior is logged via `CiStatusDebugLog`.
-
-Key markers:
-
-```
-recover-auth start
-auto-login requested
-auto-login finished result=...
-auth-notify CHECK
-auth-notify SKIP
-auth-notify SHOW
-auth-notify EMIT
-auth-notify CLICK
+```text
+Settings
+  -> GitShaReader
+  -> GitHubStatusClient
+  -> CiStatusBuildLogic
+  -> IDE notification
 ```
 
-Use logs to understand execution order.
+## Jenkins Artifacts and Preview
 
----
+Artifact handling lives mainly in `JenkinsStatusClient` and `CiStatusToolWindowFactory`.
 
-## Key Components
+The client reads artifact metadata and downloads artifacts for a selected build. The tool window can open HTML report artifacts in an IDE preview when embedded browser support is available. Downloads preserve artifact paths so relative report assets such as CSS, scripts, images, and linked pages can continue to resolve locally.
 
-### KeycloakSessionService
+## Authentication and OIDC
 
-Handles:
+Jenkins API-token access is the preferred authentication model.
 
-* Auto-login
-* Interactive login
-* Credential management
+Some Jenkins installations sit behind Keycloak/OIDC and require a web session before API calls succeed. The experimental auth path is:
 
-Important:
-
+```text
+Jenkins API auth failure
+  -> KeycloakSessionService.attemptAutoLoginInBackground()
+  -> recovered: retry/refresh without notification
+  -> not recovered: AuthNotificationCoordinator may show login action
+  -> interactive fallback if the user chooses it
 ```
-attemptAutoLoginInBackground() joins ongoing attempts
+
+Keep interactive login decisions out of polling code where possible. Polling should go through `AuthNotificationCoordinator` so notification behavior remains testable.
+
+## Build and Run Locally
+
+Use JDK 17.
+
+Run the plugin in a development IDE:
+
+```bash
+./gradlew runIde
 ```
 
----
+Build the plugin ZIP:
 
-### AuthNotificationCoordinator
+```bash
+./gradlew buildPlugin
+```
 
-Encapsulates the decision:
+Run the full local build:
 
-“Should we notify the user?”
+```bash
+./gradlew build
+```
 
-Pure logic:
+Run JetBrains plugin verification:
 
-* Calls auto-login
-* Decides notification
-* No UI dependencies
+```bash
+./gradlew verifyPlugin
+```
 
-Fully testable.
+The configured verifier targets are declared in `build.gradle.kts`.
 
----
+## Tests
 
-### CiStatusStartupActivity / ToolWindow
-
-Entry points:
-
-* Polling
-* UI-triggered actions
-
-They must:
-
-* NEVER directly trigger interactive login
-* ALWAYS go through coordinator logic
-
----
-
-[//]: # (## Testing Strategy)
-
-[//]: # ()
-[//]: # (Tests are pure &#40;no IDE required&#41;.)
-
-[//]: # ()
-[//]: # (Covered cases:)
-
-[//]: # ()
-[//]: # (* Auto-login success → no notification)
-
-[//]: # (* Auto-login failure → notification shown)
-
-[//]: # (* Notification click → interactive login)
-
-[//]: # (* Concurrent auto-login → waits correctly)
-
-[//]: # ()
-[//]: # (---)
-
-
-## Tests and Verification
-
-### Standard test suite
-
-Run the normal test suite with:
+Run the standard test suite:
 
 ```bash
 ./gradlew test
 ```
 
-Smoke tests are skipped by default, so this command is safe for normal local development and for the standard CI test workflow.
-
-For Settings-related tests only:
+Run Settings-focused tests:
 
 ```bash
 ./gradlew test --tests "*CiStatusConfigurable*"
 ```
 
-For a specific test class:
+Run a single test class:
 
 ```bash
 ./gradlew test --tests "*CiStatusConfigurableApplyResetTest"
 ```
 
-### Controlled smoke tests
+The default suite avoids requiring Docker and is suitable for regular local development and CI.
 
-Controlled smoke tests are real integration checks against local, disposable services.
+## Controlled Smoke Tests
 
-They are opt-in and must be enabled explicitly:
+Smoke tests use disposable local services and are opt-in.
+
+Run them only when Docker is available:
 
 ```bash
 JCN_CONTAINER_SMOKE_ENABLED=true ./gradlew test --tests "*SmokeTest"
 ```
 
-Current smoke coverage includes the Jenkins Settings flow:
+The Jenkins Settings smoke test starts a local Jenkins container, creates a known user/job, verifies Settings persistence, and checks successful and failing Jenkins connection diagnostics.
 
-```bash
-JCN_CONTAINER_SMOKE_ENABLED=true ./gradlew test --tests "*CiStatusConfigurableContainerSmokeTest"
-```
+New smoke tests should use the `*SmokeTest` naming convention so the PR smoke workflow can find them.
 
-The controlled Jenkins smoke test:
+## PIT Mutation Testing
 
-* starts a local Jenkins container through Testcontainers
-* uses a Jenkins Docker image configured for the test environment
-* creates a known user and job
-* verifies Settings save/reload
-* verifies the `Test Jenkins connection` action with valid credentials
-* verifies failure reporting with invalid credentials or invalid Jenkins URL
-
-Docker must be available. On local macOS development machines, the test may try to start Docker Desktop if it is installed but not running. If Docker is unavailable, the smoke test should be skipped with a clear message rather than failing unexpectedly.
-
-New smoke test classes should follow this naming convention:
+PIT is configured for pure decision logic classes:
 
 ```text
-*SmokeTest
-```
-
-The PR smoke workflow runs all classes matching this pattern.
-
----
-### PIT Mutation Testing Scripts
-
-The project includes helper scripts for running PIT mutation testing in a controlled way.
-
-PIT is configured in `build.gradle.kts` and currently targets the core classes that contain pure decision logic:
-
-```
 com.damorosodaragona.jenkinsnotifier.CiStatusBuildLogic
 com.damorosodaragona.jenkinsnotifier.AuthNotificationCoordinator
 ```
 
-The default PIT configuration uses a small set of stable tests. For broader mutation analysis, use the scripts in `scripts/`.
-
-#### Discover PIT-safe tests
-
-Run:
+Discover PIT-safe tests:
 
 ```bash
 ./scripts/discover-pit-safe-tests.sh
 ```
 
-This script:
-
-* builds the test classes
-* scans Kotlin test classes under `com.damorosodaragona.jenkinsnotifier`
-* runs PIT once per test class
-* writes safe tests to `build/pit-safe-tests.txt`
-* writes failing or incompatible tests to `build/pit-unsafe-tests.txt`
-* stores detailed logs in `build/pit-discovery-logs/`
-
-A test is considered PIT-safe when PIT can execute it successfully in isolation.
-
-#### Run PIT with safe tests
-
-After discovery, run:
+Run PIT with the safe list:
 
 ```bash
 ./scripts/safe-pitest.sh
 ```
 
-This script reads `build/pit-safe-tests.txt` and passes it to Gradle through:
-
-```bash
--PpitSafeTestsFile=build/pit-safe-tests.txt
-```
-
-The PIT HTML report is generated under:
-
-```
-build/reports/pitest/
-```
-
-#### Run PIT for one test class
-
-For debugging a specific test class, run PIT directly with:
+Run PIT for one test class:
 
 ```bash
 ./gradlew pitest --no-configuration-cache --rerun-tasks -PpitTargetTests=com.damorosodaragona.jenkinsnotifier.SomeTest
 ```
 
-This is useful when deciding whether a test should be included in the safe list.
+Keep PIT focused on pure logic. UI-heavy, IDE-dependent, or unstable tests should stay in the normal JUnit suite rather than the PIT safe list.
 
-#### Contributor rules for PIT
+## Contribution Guidelines
 
-* Keep PIT focused on pure logic classes.
-* Do not add UI-heavy or IDE-dependent tests to the safe PIT list.
-* If a test is unstable under PIT, leave it in `pit-unsafe-tests.txt` and keep it covered by normal JUnit tests.
-* Use PIT as an additional quality check, not as a replacement for regular unit tests.
-
----
-
-### Plugin verifier
-
-Run JetBrains plugin verification with:
-
-```bash
-./gradlew verifyPlugin
-```
-
-The verifier checks the plugin against the IDE targets declared in `build.gradle.kts` under `intellijPlatform.pluginVerification.ides`.
-
-Current verification targets:
-
-```text
-PyCharm Community 2023.3.7
-PyCharm Professional 2023.3.7
-PyCharm Professional 2026.1
-```
-
-`2023.3.7` covers the pre-unified PyCharm model, where Community and Professional are separate IDE products.
-
-`2026.1` covers the newer unified PyCharm distribution model, represented through the PyCharm Professional verifier target in the current Gradle configuration.
-
-Before release, run:
-
-```bash
-./gradlew test
-JCN_CONTAINER_SMOKE_ENABLED=true ./gradlew test --tests "*SmokeTest"
-./gradlew clean buildPlugin
-./gradlew verifyPlugin
-```
----
-
-## Build plugin
-
-To build the plugin ZIP locally:
-
-```bash
-./gradlew clean buildPlugin
-```
-
-The generated plugin artifact is produced under:
-
-```text
-build/distributions/
-```
----
-
-## Rules for Contributors
-
-* Do not bypass `AuthNotificationCoordinator`
-* Do not call `ensureLoggedIn()` directly from polling paths
-* Keep auth logic centralized
-* Add logs for every decision branch
-* Prefer pure, testable logic over UI-coupled code
-
----
-
-## Cleanup Notes
-
-Migration / legacy code:
-
-```
-LegacySettingsMigration*
-```
-
-Can be removed after stable release (1.0.0+).
-
----
-
+- Prefer tests around pure logic before changing UI or polling behavior.
+- Keep Jenkins networking behavior in `JenkinsStatusClient` unless a UI concern genuinely belongs in the tool window.
+- Keep Settings persistence in `CiStatusSettings` and Settings UI wiring in `CiStatusConfigurable`.
+- Keep notification decisions testable through `CiStatusBuildLogic` or `AuthNotificationCoordinator`.
+- Do not store tokens or web passwords in persisted XML state; use the JetBrains Password Safe helpers already present in `CiStatusSettings`.
+- For release work, update `pluginVersion` in `gradle.properties`, verify with `./gradlew clean test verifyPlugin buildPlugin`, then create the annotated release tag only after the release PR is merged.
