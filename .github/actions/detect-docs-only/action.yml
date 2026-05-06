@@ -1,0 +1,70 @@
+name: Detect docs-only changes
+description: >
+  Outputs docs_only=true when all changed files are under docs/ or are
+  markdown (.md/.mdx). Fail-safe: if detection fails, outputs false.
+
+outputs:
+  docs_only:
+    description: "'true' if all changes are docs/markdown, 'false' otherwise"
+    value: ${{ steps.check.outputs.docs_only }}
+  docs_changed:
+    description: "'true' if any changed file is under docs/ or is markdown"
+    value: ${{ steps.check.outputs.docs_changed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Detect docs-only changes
+      id: check
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Default fail-safe: run everything
+        echo "docs_only=false" >> "$GITHUB_OUTPUT"
+        echo "docs_changed=false" >> "$GITHUB_OUTPUT"
+
+        if [ "${{ github.event_name }}" = "push" ]; then
+          BASE="${{ github.event.before }}"
+        elif [ "${{ github.event_name }}" = "pull_request" ]; then
+          BASE="${{ github.event.pull_request.base.sha }}"
+        else
+          echo "Unsupported event: ${{ github.event_name }}"
+          exit 0
+        fi
+
+        # New branch / invalid base / shallow checkout issue => fail-safe
+        if [ -z "$BASE" ] || echo "$BASE" | grep -qE '^0+$'; then
+          echo "Cannot determine base SHA safely"
+          exit 0
+        fi
+
+        if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          echo "Base commit not available locally: $BASE"
+          exit 0
+        fi
+
+        CHANGED="$(git diff --name-only "$BASE" HEAD 2>/dev/null || true)"
+
+        if [ -z "$CHANGED" ]; then
+          echo "No changed files detected"
+          exit 0
+        fi
+
+        echo "Changed files:"
+        echo "$CHANGED"
+
+        DOCS="$(echo "$CHANGED" | grep -E '^docs/|\.md$|\.mdx$' || true)"
+        NON_DOCS="$(echo "$CHANGED" | grep -vE '^docs/|\.md$|\.mdx$' || true)"
+
+        if [ -n "$DOCS" ]; then
+          echo "docs_changed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+        if [ -z "$NON_DOCS" ]; then
+          echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          echo "Docs-only change detected"
+        else
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          echo "Non-docs changes detected"
+        fi
