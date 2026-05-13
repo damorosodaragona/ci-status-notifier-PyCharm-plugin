@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/damorosodaragona/ci-status-notifier-PyCharm-plugin?label=GitHub%20release)](https://github.com/damorosodaragona/ci-status-notifier-PyCharm-plugin/releases/latest)
 [![Tests](https://img.shields.io/github/actions/workflow/status/damorosodaragona/ci-status-notifier-PyCharm-plugin/tests.yml?branch=main&label=tests)](https://github.com/damorosodaragona/ci-status-notifier-PyCharm-plugin/actions/workflows/tests.yml)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.21-7F52FF)
-![License](https://img.shields.io/github/license/damorosodaragona/ci-status-notifier-PyCharm-plugin)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <p align="center">
   <img src="src/main/resources/META-INF/pluginIcon.svg" alt="Jenkins CI Notifier logo" width="96" height="96">
