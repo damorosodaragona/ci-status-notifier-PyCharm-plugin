@@ -1,5 +1,17 @@
 # CI Status Notifier
 
+[![JetBrains Plugin](https://img.shields.io/jetbrains/plugin/v/31622-jenkins-ci-notifier.svg?label=JetBrains%20Marketplace)](https://plugins.jetbrains.com/plugin/31622-jenkins-ci-notifier/)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/31622-jenkins-ci-notifier.svg)](https://plugins.jetbrains.com/plugin/31622-jenkins-ci-notifier/)
+[![Rating](https://img.shields.io/jetbrains/plugin/r/rating/31622-jenkins-ci-notifier.svg)](https://plugins.jetbrains.com/plugin/31622-jenkins-ci-notifier/reviews)
+[![Release](https://img.shields.io/github/v/release/damorosodaragona/ci-status-notifier-PyCharm-plugin?label=GitHub%20release)](https://github.com/damorosodaragona/ci-status-notifier-PyCharm-plugin/releases/latest)
+[![Tests](https://img.shields.io/github/actions/workflow/status/damorosodaragona/ci-status-notifier-PyCharm-plugin/tests.yml?branch=main&label=tests)](https://github.com/damorosodaragona/ci-status-notifier-PyCharm-plugin/actions/workflows/tests.yml)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.1.21-7F52FF)
+![License](https://img.shields.io/github/license/damorosodaragona/ci-status-notifier-PyCharm-plugin)
+
+<p align="center">
+  <img src="src/main/resources/META-INF/pluginIcon.svg" alt="Jenkins CI Notifier logo" width="96" height="96">
+</p>
+
 CI Status Notifier is a PyCharm/IntelliJ plugin that keeps the current project's CI state visible inside the IDE.
 
 It can read GitHub commit statuses or query Jenkins directly, then shows notifications when the build changes state. In Jenkins mode it also adds a **Jenkins CI** tool window with the detected job, latest build status, Pipeline stages, build artifacts, and HTML report previews when embedded browser rendering is available.
